@@ -2,11 +2,13 @@
 
 .align 16
 gdt_descriptor:
-  .word gdt_end - gdt - 1
-  .long gdt + 0x7c00
+  .word gdt_end - gdt_start - 1
+  .long gdt_start 
 
 
 .align 16
+gdt_start:
+
 gdt:
   # First NULL descriptor
   .quad 0

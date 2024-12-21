@@ -1,35 +1,40 @@
 .code16
+.org 0
 .text
 .global _start
-
+  
 _start:
-  mov $0x7c0, %bx
-  mov %bx, %es
-  mov %bx, %ds
+  cli
+  mov %cs, %ax
+  mov %ax, %es
+  mov %ax, %ds
+  mov %ax, %fs
+  mov %ax, %gs
+  mov %ax, %ss
   # Setting up the stack
   mov $0x3000, %sp
+
+  sti
+
   mov $success, %ebx
   call _print_string
-  
-  mov $0x200, %bx
+
+  mov $0x7e00, %bx
   mov $0x30, %dh
   call _read_sectors
   
-  # mov $0x00, %ah
-  # mov $0x03, %al
-  # int $0x10
 
   # Prepping for protected mode
-  # mov $0x7c0, %bx
-  # mov %bx, %ds 
+  lgdt (gdt_descriptor)
+   
   cli
-  lgdt gdt_descriptor
   mov %cr0, %eax
   or $0x01, %al
   mov %eax, %cr0
+   
   
    # Making the jump to 32 bit land!!!
-  ljmp $0x8, $(_start_32 + 0x7c00)
+  ljmp $0x8, $_start_32
 
 .code32
 _start_32:
@@ -39,22 +44,20 @@ _start_32:
   mov %ax, %ds
   mov %ax, %fs
   mov %ax, %gs
-  mov %ax, %cs
   mov %ax, %ss
   # Starting out fresh with a new stack
   mov $0x00090000, %esp
   mov %esp, %ebp
-
   #Jumping to 32bit stage 2
   mov $0x00007e00, %eax
   jmpl *%eax
   
 
   
-_hang:
-  jmp _hang
 .code16
 
+_hang:
+  jmp _hang
 
 _print_string:
   # Parameters: %bx contains address of string
@@ -63,7 +66,7 @@ _print_string:
   
 _print_string_loop:
   # Repeats until hits null character at the end
-  mov %es:(%ebx), %cl
+  mov (%ebx), %cl
   cmp $0x00, %cl 
   je _print_string_end
   mov %cl, %al
@@ -91,7 +94,6 @@ _read_sectors:
 
   int $0x13      # %ebx will have pointer to space where this will put it
   jc _print_error
-  
 
   # Checking to see if amount of sectors read is the same
   pop %dx
@@ -123,10 +125,10 @@ _test_a20_line:
   mov $0x510, %si
 
 
-  movb $0x00, %es:(%di)
-  movb $0xff, %es:(%si)
+  movb $0x00, (%di)
+  movb $0xff, (%si)
   
-  cmpb $0xff, %es:(%di)
+  cmpb $0xff, (%di)
   jne _test_a20_line_exit
   pop %ax
   pop %es
@@ -142,9 +144,9 @@ _test_a20_line_exit:
 
   ret
   
-disabled: .string "The aaa a20 line is disabled\r\n"
-success: .string "Let's get into it boys\r\n"
-error: .string "We failed...\r\n"
+disabled: .string "The a20 line is disabled\n"
+success: .string "Let's get into it boys\n"
+error: .string "We failed...\n"
 
 .include "src/gdt.s"
 

@@ -16,18 +16,18 @@ _start_stage_two:
   or $(1 << 31), %eax
   mov %eax, %cr0
   
-  ljmp $0x8, $(_setup_64 + 0x7c00)
+  lgdt (gdt64_desc)
+  
+  ljmp $0x8, $(_setup_64)
 
 .code64 
 _setup_64:
-  #lgdt (gdt64_descriptor)
-  mov $0x10, %ax
-  
+  mov $0, %rax
 
-  mov $0x0, %rcx
-  mov $0x8000, %rax
   mov $0x90000, %rsp
   mov %rsp, %rbp
+  
+  mov $0x8000, %rax
   jmp *%rax 
 
 .code32 
@@ -91,7 +91,6 @@ _print_string:
   mov $0x000b8000, %ebx
   mov $0x0f, %ah
   mov $hello, %ecx
-  add $0x7c00, %ecx
 
 _print_string_loop:
   mov (%ecx), %al
@@ -105,6 +104,6 @@ _print_string_end:
   popa
   ret
 
-.include "src/gdt64.s"
-hello: .string "Helloasdf from 32bit land!!"
+hello: .string "Hello from 32bit land!!"
 
+.include "src/gdt64.s"

@@ -1,13 +1,14 @@
 ENTRY(_start);
 SECTIONS
 {
-    .text : {
-        *(.text);
-    }
-    .data : {
-        *(.data);
-        *(.rodata);
-    }
+    . = 0x7c00; 
+    /* .text : { */
+    /*     *(.text); */
+    /* } */
+    /* .data : { */
+    /*     *(.data); */
+    /*     *(.rodata); */
+    /* } */
 
     /* Boot signature */
     
