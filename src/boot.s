@@ -12,7 +12,7 @@ _start:
   call _print_string
   
   mov $0x200, %bx
-  mov $0x1, %dh
+  mov $0x30, %dh
   call _read_sectors
   
   # mov $0x00, %ah
@@ -33,13 +33,19 @@ _start:
 
 .code32
 _start_32:
- #Jumping to 32bit stage 2
+  # Resetting all of the segment registers
   mov $(gdt_data_segment - gdt), %ax
   mov %ax, %es
   mov %ax, %ds
   mov %ax, %fs
   mov %ax, %gs
-  mov %ax, %cs  
+  mov %ax, %cs
+  mov %ax, %ss
+  # Starting out fresh with a new stack
+  mov $0x00090000, %esp
+  mov %esp, %ebp
+
+  #Jumping to 32bit stage 2
   mov $0x00007e00, %eax
   jmpl *%eax
   

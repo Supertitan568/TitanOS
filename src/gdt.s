@@ -23,7 +23,7 @@ gdt_data_segment:
 .word 0xffff
   .word 0x0000
   .byte 0x00
-  .byte 0b10011010
+  .byte 0b10010010
   .byte 0b11001111
   .byte 0x00
 
