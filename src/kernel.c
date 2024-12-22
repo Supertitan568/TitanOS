@@ -2,7 +2,10 @@
 
 int kernel_start(){
   console_init();
-  printc('c');
+  const char* test_str = "Welcome to titanOS";
+  clear_console();
+  printstr(test_str);
+  
   while(1){
     continue;
   }

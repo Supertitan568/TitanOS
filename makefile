@@ -4,7 +4,7 @@ CC_FLAGS+= -c -ffreestanding -target x86_64-none-elf
 BOOT_SRCS= src/boot.s src/stage2.s
 BOOT_OBJS= $(BOOT_SRCS:.s=.o)
 
-KERNEL_SRCS= src/kernel.c src/vga.c
+KERNEL_SRCS= src/kernel.c src/vga.c src/cpu_ports.c
 KERNEL_OBJS=$(KERNEL_SRCS:.c=.o)
 
 ISO=bin/os.bin
