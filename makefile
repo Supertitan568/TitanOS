@@ -1,10 +1,16 @@
 AS=as
 CC=clang
-CC_FLAGS+= -c -ffreestanding -target x86_64-none-elf 
+
+CC_FLAGS+= -c -ffreestanding -target x86_64-none-elf
+ifeq ($(MAKECMDGOALS), test)
+	CC_FLAGS += -D TEST=1	
+endif
+
 BOOT_SRCS= src/boot.s src/stage2.s
 BOOT_OBJS= $(BOOT_SRCS:.s=.o)
 
-KERNEL_SRCS= src/kernel.c src/vga.c src/cpu_ports.c
+#KERNEL_SRCS= $(wildcard src/*.c)
+KERNEL_SRCS= src/kernel.c src/vga.c src/cpu_ports.c src/unit_tests.c src/mem.c
 KERNEL_OBJS=$(KERNEL_SRCS:.c=.o)
 
 ISO=bin/os.bin
@@ -16,6 +22,8 @@ all: boot run
 
 %.o: %.c	
 	$(CC) $(CC_FLAGS) -o $@ -c $<
+
+test: run
 
 run: iso
 	qemu-system-x86_64 --vga std --no-reboot -d int $(ISO)

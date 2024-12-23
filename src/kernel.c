@@ -1,10 +1,18 @@
 #include "vga.h"
 
+#ifdef TEST
+ #include "unit_tests.h"
+#endif 
+
 int kernel_start(){
-  console_init();
-  const char* test_str = "Welcome to titanOS";
   clear_console();
-  printstr(test_str);
+
+  #if defined(TEST) 
+   run_unit_tests();
+  #else
+    const char* teststr = "The unit tests were not run...";
+    printstr(teststr);
+  #endif
   
   while(1){
     continue;
