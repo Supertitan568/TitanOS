@@ -22,9 +22,7 @@ _start_stage_two:
 
 .code64 
 _setup_64:
-  mov $0, %rax
-
-  mov $0x90000, %rsp
+  mov $0x1e0000, %rsp
   mov %rsp, %rbp
   
   mov $0x8000, %rax

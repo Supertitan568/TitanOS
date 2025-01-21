@@ -1,3 +1,4 @@
+#include "isr.h"
 #include "vga.h"
 
 #ifdef TEST
@@ -5,8 +6,10 @@
 #endif 
 
 int kernel_start(){
+  setup_idt();
+  load_idt(); 
   clear_console();
-
+  
   #if defined(TEST) 
    run_unit_tests();
   #else
@@ -18,4 +21,4 @@ int kernel_start(){
     continue;
   }
   return 0;
- }      
+}      

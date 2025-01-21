@@ -25,9 +25,12 @@ static void vga_test3(){
   }
 }
 
+static void interrupt_test1(){
+  float zero_div = 100 / 0;
+}
+
 void run_unit_tests(){
-  vga_test1();
-  vga_test3();
+  interrupt_test1();
   return;
 }
 
