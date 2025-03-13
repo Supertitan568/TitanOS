@@ -1,5 +1,5 @@
 .code16
-.org 0
+.org 0x0
 .text
 .global _start
   
@@ -13,17 +13,19 @@ _start:
   mov %ax, %ss
   # Setting up the stack
   mov $0x3000, %sp
-
+  
   sti
-
+  
+  # mov %cs, %di
+  # call _print_short 
+  
   mov $success, %ebx
   call _print_string
 
   mov $0x7e00, %bx
   mov $0x30, %dh
   call _read_sectors
-  
-
+   
   # Prepping for protected mode
   lgdt (gdt_descriptor)
    
@@ -32,7 +34,6 @@ _start:
   or $0x01, %al
   mov %eax, %cr0
    
-  
    # Making the jump to 32 bit land!!!
   ljmp $0x8, $_start_32
 
@@ -74,8 +75,15 @@ _print_string_loop:
 
   inc %ebx
   jmp _print_string_loop
-
+  
+  
 _print_string_end:
+  # Printing new line char
+  mov $0x0d, %al
+  int $0x10
+  mov $0x0a, %al
+  int $0x10
+
   popa
   ret
 
@@ -91,7 +99,7 @@ _read_sectors:
   mov $0x2, %cl  # Starting sector
   mov $0x0, %ch  # cylinder no. 
   mov $0x0, %dh  # head no.
-
+  
   int $0x13      # %ebx will have pointer to space where this will put it
   jc _print_error
 
@@ -143,10 +151,62 @@ _test_a20_line_exit:
   pop %ax 
 
   ret
+
+_print_short:
+  # Prints whatever is in %ax
+  # Need this mostly for debugging
+  push %cx
+  push %ax
+  push %dx
   
-disabled: .string "The a20 line is disabled\n"
-success: .string "Let's get into it boys\n"
-error: .string "We failed...\n"
+  mov $4, %cx
+  
+  #Printing "0x"
+  mov $0x0e, %ah
+  mov $'0', %al
+  int $0x10
+  mov $'x', %al
+  int $0x10
+_print_short_loop_start:
+  # Setting up the right amount of shifts
+  mov %cx, %ax
+  sub $1, %ax
+  mov $4, %bx
+  mul %bx
+  # %ax should have 4(%cx - 1) in it
+  push %cx
+  mov %ax, %cx
+  mov %di, %ax
+  shr %cl, %ax
+  pop %cx
+
+  mov $0x0e, %ah
+  and $0x0f, %al
+  cmpb $0x0a, %al
+  jge _print_short_loop_else
+  add $0x30, %al
+  jmp _print_short_loop_end
+_print_short_loop_else:
+  add $0x51, %al
+_print_short_loop_end:
+  int $0x10
+  loop _print_short_loop_start
+  
+  # Printing new line char
+  mov $0x0d, %al
+  int $0x10
+  mov $0x0a, %al
+  int $0x10
+  pop %dx
+  pop %ax
+  pop %cx
+  ret
+  
+
+  
+disabled: .string "The a20 line is disabled"
+success: .string "Let's get into it boys"
+error: .string "We failed..."
 
 .include "src/gdt.s"
 

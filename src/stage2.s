@@ -47,16 +47,31 @@ _setup_pt:
   movl $0x3003, (%edi)
   addl $0x1000, %edi
   movl $0x4003, (%edi)
-
+   
   addl $0x1000, %edi
   mov $0x00000003, %ebx
   mov $512, %ecx
+  call _add_pe_protected
 
-_add_pe_protected:
-  movl %ebx, (%edi)
-  add $0x1000, %ebx
+  # Creating page entry for 0x7fe0000 so we can get the RSDT
+  # This will start at the virutal address 0x200000
+  mov $0x5000, %edi
+  mov $0x7fe0013, %ebx
+  mov $512, %ecx
+  call _add_pe_protected
+  
+  mov $0x3008, %edi
+  mov $0x5003, (%edi)
+  
+  # Putting a couple entries in for the local/io apic at phys addr 0xfee00000/0xfec00000
+  # Will start at 0x400000
+  mov $0x6000, %edi 
+  mov $0xfee00013, (%edi)
   add $8, %edi
-  loop _add_pe_protected
+  mov $0xfec00013, (%edi)
+
+  mov $0x3010, %edi
+  mov $0x6003, (%edi)
 
   mov %cr4, %eax
   or $(1 << 5), %eax
@@ -65,6 +80,17 @@ _add_pe_protected:
   popa
   ret
 
+_add_pe_protected:
+  pusha
+_add_pe_protected_loop:
+  movl %ebx, (%edi)
+  add $0x1000, %ebx
+  add $8, %edi
+  loop _add_pe_protected_loop
+
+  popa
+  ret
+ 
 _clear_screen:
   pusha
   mov $0x000b8000, %ebx

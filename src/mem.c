@@ -27,3 +27,16 @@ void* mem_set(void* s, int c, size_t n){
   return s;
 }
 
+int mem_cmp(const void* s1, const void* s2, size_t n){
+  uint8_t* current_s1 = (uint8_t*) s1;
+  uint8_t* current_s2 = (uint8_t*) s2;
+
+  for(int i = 0; i < n; i++){
+    if(*current_s1 != *current_s2){
+      return 0; 
+    }
+    current_s1++;
+    current_s2++;
+  }
+  return 1;
+}

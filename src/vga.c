@@ -41,7 +41,7 @@ static void scroll_down(){
   //mem_set((void*) (vga_start + (VGA_WIDTH * 24)), 0, VGA_WIDTH);
 }
 
-static void printc(char c){
+void printc(char c){
   if (c == '\n'){
     cursor.x = 0;
     cursor.y++;
@@ -86,3 +86,24 @@ void printstr(const char* str){
   move_cursor(cursor.x, cursor.y);
 }
 
+void printlong(uint64_t num){
+  // Maybe not the best implementation lol
+  uint8_t lsb;
+  char num_str[17];
+
+  for(int i = 15; i >= 0; i--){
+    lsb = num & 0x0f;
+    if(lsb < 0xa){
+      lsb += 0x30; 
+    } 
+    else{
+      lsb += 0x57; 
+    }
+    
+    num >>= 4;
+    num_str[i] = (char) lsb;
+  }
+  num_str[16] = '\0';
+  printstr("0x");
+  printstr(num_str);
+}

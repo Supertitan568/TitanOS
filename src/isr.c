@@ -1,6 +1,8 @@
 #include <stddef.h>
 #include <stdint.h>
 #include "vga.h"
+#include "apic.h"
+#include "keyboard.h"
 
 // TODO: Calculate this value from isr_stubs.s
 #define NUM_STUBS 256
@@ -40,7 +42,7 @@ struct cpu_context_t {
   
   uint64_t vec;
   uint64_t error_code;
-
+ 
   uint64_t rip_i;
   uint64_t cs_i;
   uint64_t flags_i;
@@ -98,13 +100,25 @@ void load_idt(){
 }
 
 struct cpu_context_t* interrupt_handler(struct cpu_context_t* status){
-  printstr("\nError: ");
   if(status->vec <= 32){
+    printstr("\nKernel Panic!!: ");
     printstr(exception_types[status->vec]);
+    while(1){
+      continue;
+    } 
+  }
+  else if(status->vec == 0xf0){
+    printstr("Local APIC interrupt served!!\n");
+  }
+  else if(status->vec == 0x28){
+    keyboard_handler();
   }
   else{
-    printstr("Unknown Interrupt"); 
+    printstr("\nUnknown Interrupt");
+    printlong((uint64_t) status->vec); 
   }
   printstr("\n");
+  send_local_apic_eoi((void*) 0x400000);  
+   
   return status;
 }
