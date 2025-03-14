@@ -117,7 +117,6 @@ struct cpu_context_t* interrupt_handler(struct cpu_context_t* status){
     printstr("\nUnknown Interrupt");
     printlong((uint64_t) status->vec); 
   }
-  printstr("\n");
   send_local_apic_eoi((void*) 0x400000);  
    
   return status;

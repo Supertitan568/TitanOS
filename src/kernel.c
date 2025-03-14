@@ -1,7 +1,8 @@
 #include "isr.h"
 #include "vga.h"
-#include "acpi.h"
 #include "apic.h"
+#include "acpi.h"
+#include "keyboard.h"
 #include <stdint.h>
 
 #ifdef TEST
@@ -59,6 +60,7 @@ int kernel_start(){
       
   // TODO: Page this out here when we have the page allocator
   apic_setup();
+  check_scanset(); 
 
   #if defined(TEST) 
    run_unit_tests();
@@ -67,7 +69,6 @@ int kernel_start(){
     printc('\n');
   #endif
 
-  
   while(1){
     continue;
   }
