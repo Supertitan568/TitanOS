@@ -2,6 +2,7 @@
 #include "acpi.h"
 #include "cpu_ports.h"
 #include "vga.h"
+#include "vmm.h"
 #include <stdbool.h>
 #include <stdint.h>
 
@@ -10,6 +11,9 @@
 
 #define PIC_SLAVE_COMMAND_PORT 0xa0
 #define PIC_SLAVE_DATA_PORT 0xa1
+
+void* local_apic_regs;
+void* io_apic_regs;
 
 void disable_8259(){
   // ICW that starts initalization
@@ -31,6 +35,15 @@ void disable_8259(){
   // Masking all Interrupts
   outb(PIC_MASTER_DATA_PORT, 0xff);
   outb(PIC_SLAVE_DATA_PORT, 0xff);
+}
+
+void apic_setup(){
+  local_apic_regs = vmm_alloc((uintptr_t) NULL, 0x1000, VM_FLAG_MMIO | 0x10, (void*) 0xfee00000);
+  local_apic_enable(local_apic_regs); 
+  
+  io_apic_regs = vmm_alloc((uintptr_t) NULL, 0x1000, VM_FLAG_MMIO | 0x10, (void*) 0xfec00000);
+  
+  remap_ioredtbl((void*) io_apic_regs); 
 }
 
 void* get_local_apic_addr(){
@@ -81,15 +94,18 @@ void* get_io_apic_ptr(){
   return 0x0;
 }
 
+
 void write_io_apic_reg(void* io_apic_base, uint8_t offset, uint32_t val){
   *((volatile uint32_t*) io_apic_base) = offset;
   *((volatile uint32_t*) (((uint8_t*)io_apic_base) + 0x10)) = val;
 }
 
+
 uint32_t read_io_apic_reg(void* io_apic_base, uint8_t offset){
   *((volatile uint32_t*) io_apic_base) = offset;
   return *((volatile uint32_t*) (((uint8_t*)io_apic_base) + 0x10)); 
 }
+
 
 void remap_ioredtbl(void* io_apic_base){
   // Writing the first 32 bits of the ioredtbl entry

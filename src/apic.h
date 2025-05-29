@@ -15,5 +15,6 @@ inline uint64_t get_apic_id_reg(void* local_apic_regs){
 void* get_io_apic_ptr();
 void remap_ioredtbl(void* io_apic_base);
 void send_local_apic_eoi(void* local_apic_regs);
+void apic_setup();
 
 #endif // APIC_H

@@ -21,7 +21,7 @@ void* mem_cpy(void* dest, void* src, size_t num_bytes){
 void* mem_set(void* s, int c, size_t n){
   uint8_t* current_s = (uint8_t*) s;
   for(int i = 0; i < n; i++){
-    *current_s = c;
+    current_s[i] = c;
   }
 
   return s;

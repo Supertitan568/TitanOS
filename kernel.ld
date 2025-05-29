@@ -1,25 +1,34 @@
-OUTPUT_FORMAT("binary")
-ENTRY(kernel_start)
-SECTIONS {
-    . = 0x8000
-    .text {
-        *(.text);
-    }
+. = KERNEL_OFFSET;
 
-    .data {
-        *(.data);
-        *(.rodata); 
-    }
+ENTRY(kernel_start);
 
-    .bss {
-      *(.bss)
-    }
-    
-    /*Discard common unwanted/unneeded sections*/
-    /DISCARD/ : {
-        *(.comment);
-        *(.note.gnu.property);
-    }
+KERNEL_OFFSET = 0xFFFFFF8000000000;
 
-    
+SECTIONS
+{
+   
+  .text : 
+  {
+    *(.text.begin)
+    *(.text)
+    *(.text*)
+    *(.ltext*);
+
+  }
+  .rodata :
+  {
+    *(.rodata*)
+    *(.lrodata.*)
+  }
+  .data :
+  {
+    *(.data)
+  }
+  .bss :
+  {
+    *(.COMMON)
+    *(.bss)
+  }
+
+  kernel_end = .;  
 }

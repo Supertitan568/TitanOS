@@ -8,7 +8,7 @@
 #define NUM_STUBS 256
 // Function Pointer to the different isr stubs
 extern char start_isr_stubs[];
-
+extern void* local_apic_regs;
 struct __attribute__((packed)) idt_entry {
   uint16_t low_addr;        // 15:0 of 64 bit handler addr
   uint16_t code_selector;   // Code selector (deprecated)
@@ -117,7 +117,7 @@ struct cpu_context_t* interrupt_handler(struct cpu_context_t* status){
     printstr("\nUnknown Interrupt");
     printlong((uint64_t) status->vec); 
   }
-  send_local_apic_eoi((void*) 0x400000);  
+  send_local_apic_eoi(local_apic_regs);  
    
   return status;
 }

@@ -6,13 +6,17 @@
 #include "vga.h"
 #include "cpu_ports.h"
 #include "mem.h"
-#define VGA_START_ADDR 0xb8000
-#define VGA_END_ADDR 0xb8fa0
+#include "vmm.h"
+#include <stdint.h>
+
+// TODO: Get this at run time from the vmm
+#define VGA_PHYS_START_ADDR 0xb8000 
+#define VGA_PHYS_END_ADDR 0xb8fa0
 #define VGA_COMMAND 0x3d4
 #define VGA_DATA 0x3d5
 #define VGA_WIDTH 80
 #define VGA_HEIGHT 25
-#define VGA_LENGTH VGA_END_ADDR - VGA_START_ADDR
+#define VGA_LENGTH VGA_PHYS_END_ADDR - VGA_PHYS_START_ADDR
 
 struct{
   vga* vga_out;
@@ -36,8 +40,7 @@ static void scroll_down(){
   //      It will work for now but might 
   //      break if I change the implementation
 
-  vga* vga_start = (vga*) VGA_START_ADDR;
-  mem_cpy((void*)vga_start,(void*) (vga_start + VGA_WIDTH), VGA_LENGTH);
+  mem_cpy((void*)cursor.vga_out,(void*) (cursor.vga_out + VGA_WIDTH), VGA_LENGTH);
   //mem_set((void*) (vga_start + (VGA_WIDTH * 24)), 0, VGA_WIDTH);
 }
 
@@ -47,8 +50,8 @@ void printc(char c){
     cursor.y++;
   }
   else{
-    cursor.vga_out = (vga*) (VGA_START_ADDR + (((cursor.y * VGA_WIDTH) + cursor.x) * 2));
-  *(cursor.vga_out) = 0x0f00 + c; 
+    vga* curr_char = (vga*) ((uintptr_t)cursor.vga_out + (((cursor.y * VGA_WIDTH) + cursor.x) * 2));
+    *(curr_char) = 0x0f00 + c; 
     cursor.x += 1;
     cursor.y += (int) (cursor.x / ((int) VGA_WIDTH)); 
     cursor.x %= VGA_WIDTH;
@@ -63,7 +66,8 @@ void printc(char c){
 
 void console_init(){
   // Resets console
-  cursor.vga_out = (vga*) VGA_START_ADDR;
+  cursor.vga_out = (vga*) vmm_alloc((uintptr_t) NULL, VGA_LENGTH, VM_FLAG_MMIO, (void*) VGA_PHYS_START_ADDR);
+   
   cursor.x = 0;
   cursor.y = 0;
   move_cursor(cursor.x, cursor.y);
