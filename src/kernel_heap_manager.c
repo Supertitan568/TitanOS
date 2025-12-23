@@ -31,7 +31,7 @@ static inline void* add_void_ptr(void* ptr, uintptr_t num){
 
 static bool get_more_pages(int num_pages){
   int region_length = ((uintptr_t) heap_end) - ((uintptr_t) heap_start) + (0x1000 * num_pages);
-  if(vmm_lengthen((uintptr_t) heap_start, region_length)){
+  if(vmm_lengthen((uintptr_t) heap_start, 0x1000)){
     heap_end += (0x1000 * num_pages);
     return true;
   }

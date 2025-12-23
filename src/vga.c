@@ -8,6 +8,7 @@
 #include "mem.h"
 #include "vmm.h"
 #include <stdint.h>
+#include <stdarg.h>
 
 // TODO: Get this at run time from the vmm
 #define VGA_PHYS_START_ADDR 0xb8000 
@@ -24,8 +25,8 @@ struct{
   int y;
 } cursor;
 
-static void move_cursor(int x, int y){
-  int pos = y * VGA_WIDTH + x;
+void move_cursor(){
+  uint32_t pos = cursor.y * VGA_WIDTH + (cursor.x + 1);
   // Setting cursor low port to vga register
   outb(VGA_COMMAND, 0x0f);
   outb(VGA_DATA, (uint8_t) (pos & 0xff));
@@ -40,7 +41,7 @@ static void scroll_down(){
   //      It will work for now but might 
   //      break if I change the implementation
 
-  mem_cpy((void*)cursor.vga_out,(void*) (cursor.vga_out + VGA_WIDTH), VGA_LENGTH);
+  memcpy((void*)cursor.vga_out,(void*) (cursor.vga_out + VGA_WIDTH), VGA_LENGTH);
   //mem_set((void*) (vga_start + (VGA_WIDTH * 24)), 0, VGA_WIDTH);
 }
 
@@ -70,7 +71,7 @@ void console_init(){
    
   cursor.x = 0;
   cursor.y = 0;
-  move_cursor(cursor.x, cursor.y);
+  move_cursor();
 }
 
 void clear_console(){
@@ -80,6 +81,8 @@ void clear_console(){
   console_init();
 }
 
+
+
 void printstr(const char* str){
   char* current_char = (char*) str;
   while(*current_char != '\0'){
@@ -87,7 +90,7 @@ void printstr(const char* str){
     current_char++;
   }
 
-  move_cursor(cursor.x, cursor.y);
+  move_cursor();
 }
 
 void printlong(uint64_t num){
@@ -110,4 +113,49 @@ void printlong(uint64_t num){
   num_str[16] = '\0';
   printstr("0x");
   printstr(num_str);
+}
+
+static void printint(int d){ 
+  char num_str[10];
+  uint8_t digit;
+  for(int i = sizeof(num_str); i > 0; i--){
+    digit = d % 10;
+    num_str[i - 1] += 48 + digit;
+    d -= digit;
+    if(d == 0)
+      break; 
+  }
+
+  printstr(num_str);
+}
+
+void printf(const char* format, ...){
+  va_list args;
+  va_start(args, format);
+  char* current_char = (char*) format;
+  while(*current_char != '\0'){
+    if(*current_char == '%'){
+      switch(*(current_char + 1)){
+        case 'd':
+          printint(va_arg(args, int));
+          current_char += 2;
+          continue;
+        case 's':
+          printstr(va_arg(args, char*));
+          current_char += 2;
+
+        case 'l':
+          if(*(current_char + 2) == 'u'){
+            printlong(va_arg(args, uint64_t));
+            current_char += 3;
+            continue;
+          }
+          break;
+      }
+    }
+    printc(*current_char);
+    current_char++;
+  }
+   
+  move_cursor();
 }

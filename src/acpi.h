@@ -30,6 +30,6 @@ struct rsdp_t {
 struct rsdp_descriptor_t* get_rsdp();
 
 bool validate_rsdp(struct rsdp_descriptor_t* rsdp);
-struct rsdp_t* get_apic_table(struct rsdp_descriptor_t* rsdp_desc);
+struct rsdp_t* get_acpi_table(struct rsdp_descriptor_t* rsdp_desc, const char* sig);
 
 #endif 

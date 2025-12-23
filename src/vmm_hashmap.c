@@ -26,7 +26,7 @@ void vmm_hashmap_init(){
   // printstr("Page Table Struct length: ");
   // printlong(sizeof(struct page_table));
   // printc('\n');
-  mem_set(hashmap_buckets, 0, sizeof(struct page_table*) * HASH_MAP_BUCKETS);
+  memset(hashmap_buckets, 0, sizeof(struct page_table*) * HASH_MAP_BUCKETS);
 }
 
 

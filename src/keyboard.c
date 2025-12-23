@@ -36,6 +36,7 @@ void keyboard_handler(){
     status = keyboard_layout[status];
     if(status){
       printc(status);
+      move_cursor();
       keyboard_buffer[keyboard_pos] = status;
       keyboard_pos = (keyboard_pos + 1) % KEYBOARD_BUFFER_SIZE; 
     }

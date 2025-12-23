@@ -3,6 +3,8 @@
 #include "vga.h"
 #include "apic.h"
 #include "keyboard.h"
+#include "isr.h"
+#include "scheduler.h"
 
 // TODO: Calculate this value from isr_stubs.s
 #define NUM_STUBS 256
@@ -25,30 +27,6 @@ struct __attribute__ ((packed)) idtr{
   uint16_t limit;
   uint64_t base;
 }  idt_ptr;
-
-struct cpu_context_t {
-  uint64_t rax;
-  uint64_t rbx; 
-  uint64_t rcx; 
-  uint64_t rdx; 
-  uint64_t r8; 
-  uint64_t r9; 
-  uint64_t r10; 
-  uint64_t r11; 
-  uint64_t r12;
-  uint64_t r13;
-  uint64_t r14;
-  uint64_t r15;
-  
-  uint64_t vec;
-  uint64_t error_code;
- 
-  uint64_t rip_i;
-  uint64_t cs_i;
-  uint64_t flags_i;
-  uint64_t rsp_i;
-  uint64_t ss_i;
-};
 
 const char* exception_types[] = {
   "Divide-by-Zero-Error",
@@ -112,6 +90,7 @@ struct cpu_context_t* interrupt_handler(struct cpu_context_t* status){
   }
   else if(status->vec == 0x28){
     keyboard_handler();
+    *status = schedule(status);
   }
   else{
     printstr("\nUnknown Interrupt");

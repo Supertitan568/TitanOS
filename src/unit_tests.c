@@ -31,10 +31,9 @@ static void vga_test1(){
 
 
 static void vga_test2(){
-  // This tests the cursor of the screen
-  // Get cursor position
-  // Move cursor position to a random location
-  // Compare to new cursor position
+  printf("Hello, %s\n", "supertitan"); 
+  printf("NULL Addr: %lu\n", 0);
+  printf("Random Addr: %lu\n", 0x123456789);
 }
 
 
@@ -164,7 +163,8 @@ static void test_vmm_alloc(){
 }
 
 void run_unit_tests(){
-  test_vmm_alloc();
+
+  vga_test2();
   return;
 }
 

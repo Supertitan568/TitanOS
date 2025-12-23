@@ -7,7 +7,6 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-#include <sys/types.h>
 // Bits 0 - 11 are page flags 
 
 
@@ -24,32 +23,38 @@ struct page_table {
 };
 
 // Literally just the kernel size from the makefile. We should get this from the linker
-struct vm_object{
+typedef struct vm_object{
   uintptr_t base;
   size_t length;
   size_t flags;
   struct vm_object* next;
-};
+}vm_object;
 
 // My god I am using hella linked lists. This is more than I will probably ever use again.
-
-// Since I'm planning on making this higher half, we will have to make sure all code that relies on identity map 
-
-struct vm_object kernel_page_tbls_obj = {
+// This is the inital linked list for the kernel
+vm_object kernel_page_tbls_obj = {
   0xffffff8000200000,
   0x6000,
   VM_FLAG_READ_WRITE,
   NULL
 };
 
-struct vm_object kernel_heap_obj = {
-  0xffffff8000006000,
-  0x26000,
+vm_object kernel_stack_obj = {
+  0xffffff80001fa000,
+  0x6000,
   VM_FLAG_READ_WRITE,
-  NULL
+  &kernel_page_tbls_obj
 };
 
-struct vm_object kernel_text_obj = {
+
+vm_object kernel_heap_obj = {
+  0xffffff8000006000,
+  0x20000,
+  VM_FLAG_READ_WRITE,
+  &kernel_stack_obj
+};
+
+vm_object kernel_text_obj = {
   0xffffff8000000000,
   KERNEL_SIZE,
   VM_FLAG_READ_WRITE,
@@ -58,7 +63,7 @@ struct vm_object kernel_text_obj = {
 
 // We need this dummy_proc object at 0x0000 to start our vm_object list
 // TODO: Change this to be length 0 once we get this working
-struct vm_object head_obj  = {
+vm_object head_obj  = {
   0x00000000,
   0x26000,
   VM_FLAG_READ_WRITE,
@@ -155,7 +160,7 @@ bool mmap(uint64_t* root_table, void* paddr, void* vaddr, size_t flags){
       }
       pt_vaddr[pt_offset] = ((uint64_t) pt_paddr) | 0x3;
       pt_vaddr = (void*) (kernel_page_tbls_obj.base + kernel_page_tbls_obj.length); 
-      mem_set(pt_vaddr, 0, 0x1000);
+      memset(pt_vaddr, 0, 0x1000);
       
     }
 
@@ -171,7 +176,7 @@ bool vmm_lengthen(uintptr_t start_region, int inc){
   // We can only work with pages so the lengths in the vmm obj needs to be page aligned
   inc = PAGE_ALIGN(inc);
 
-  struct vm_object* curr_vm_obj = &head_obj;
+  vm_object* curr_vm_obj = &head_obj;
   
   // We look through the list for the requested region
   while(curr_vm_obj != NULL){
@@ -220,12 +225,12 @@ bool vmm_lengthen(uintptr_t start_region, int inc){
 void vmm_free(void* start_region){
   // I'm going to assume for right now that this exists in here and it has been allocated with kmalloc
   // TODO: get rid of those assumptions
-  struct vm_object* curr_vmm_obj = &head_obj;
+  vm_object* curr_vmm_obj = &head_obj;
   while(((void*) curr_vmm_obj->next->base) != start_region){
     curr_vmm_obj = curr_vmm_obj->next; 
   }
   
-  struct vm_object* tmp_ptr = curr_vmm_obj->next;
+  vm_object* tmp_ptr = curr_vmm_obj->next;
   curr_vmm_obj->next = curr_vmm_obj->next->next;
   kfree(tmp_ptr);
 }
@@ -234,7 +239,7 @@ void* vmm_alloc(uintptr_t start_region, size_t length, size_t flags, void* args)
   length = PAGE_ALIGN(length);
 
   // Checks to see if the region requested already exists and if it does then just lengthens it else returns an error
-  struct vm_object* current_vm_object = &head_obj;
+  vm_object* current_vm_object = &head_obj;
   uintptr_t found;
   if((void*) start_region == NULL){
     // Going through the list until we find a space with enough space to put a region with the requested size
@@ -269,7 +274,7 @@ void* vmm_alloc(uintptr_t start_region, size_t length, size_t flags, void* args)
   
   
   // Creating the new vmm object and inserting it into the list 
-  struct vm_object* new_region = (struct vm_object*) kmalloc(sizeof(struct vm_object));
+  vm_object* new_region = (vm_object*) kmalloc(sizeof(vm_object));
   new_region->base = found;
   new_region->length = length;
   new_region->flags = flags;
@@ -292,7 +297,7 @@ void* vmm_alloc(uintptr_t start_region, size_t length, size_t flags, void* args)
       pt_paddr = pmm_alloc_page(); 
     }
 
-    if(!mmap((void*) PML4T_ADDR, pt_paddr,  pt_vaddr, flags)){
+    if(!mmap((void*) PML4T_ADDR, pt_paddr,  pt_vaddr, flags)){}}
       return NULL;
     }
     pt_vaddr += 0x1000;
@@ -302,18 +307,16 @@ void* vmm_alloc(uintptr_t start_region, size_t length, size_t flags, void* args)
 }
 
 
+
 void vmm_init(){
   kheap_init();
   pmm_init(0xfed00);
-  //*((uint64_t*)0xffffff8000200000) = 0;
+  *((uint64_t*)0xffffff8000200000) = 0;
   vmm_hashmap_init();
-  vmm_hashmap_put(1, (void*) 0xffffff8000200000, (void*) 0x1000);
-  vmm_hashmap_put(1, (void*) 0x2000, (void*) 0x2000);
-  vmm_hashmap_put(1, (void*) 0x3000, (void*) 0x3000);
-  vmm_hashmap_put(1, (void*) 0x4000, (void*) 0x4000);
+  vmm_hashmap_put(1, (void*) 0xffffff8000200000, (void*) 0xe000);
 
-  vmm_hashmap_put(1, (void*) 0xffffff8000201000, (void*) 0x5000);
-  vmm_hashmap_put(1, (void*) 0xffffff8000202000, (void*) 0x6000);
-  vmm_hashmap_put(1, (void*) 0xffffff8000203000, (void*) 0xe000);
-  vmm_hashmap_put(1, (void*) 0xffffff8000204000, (void*) 0xf000);
+  vmm_hashmap_put(1, (void*) 0xffffff8000201000, (void*) 0xf000);
+  vmm_hashmap_put(1, (void*) 0xffffff8000202000, (void*) 0x10000);
+  vmm_hashmap_put(1, (void*) 0xffffff8000203000, (void*) 0x11000);
+  vmm_hashmap_put(1, (void*) 0xffffff8000204000, (void*) 0x12000);
 }

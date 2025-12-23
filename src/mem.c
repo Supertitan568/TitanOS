@@ -2,7 +2,7 @@
 #include <stddef.h>
 #include <stdint.h>
 
-void* mem_cpy(void* dest, void* src, size_t num_bytes){
+void* memcpy(void* dest, void* src, size_t num_bytes){
   // Getting something working quick
   // TODO: Rewrite with block copying in assembly
 
@@ -18,7 +18,7 @@ void* mem_cpy(void* dest, void* src, size_t num_bytes){
   return dest;
 }
 
-void* mem_set(void* s, int c, size_t n){
+void* memset(void* s, int c, size_t n){
   uint8_t* current_s = (uint8_t*) s;
   for(int i = 0; i < n; i++){
     current_s[i] = c;
@@ -27,7 +27,7 @@ void* mem_set(void* s, int c, size_t n){
   return s;
 }
 
-int mem_cmp(const void* s1, const void* s2, size_t n){
+int memcmp(const void* s1, const void* s2, size_t n){
   uint8_t* current_s1 = (uint8_t*) s1;
   uint8_t* current_s2 = (uint8_t*) s2;
 

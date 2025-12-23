@@ -38,11 +38,18 @@ static void print_rsdt_info(struct rsdp_t* rsdt_ptr){
 
 
 struct rsdp_descriptor_t* get_rsdp(){
-  char* current_sig_ptr = (char*) vmm_alloc((uintptr_t) NULL, EXTENDED_BIOS_LENGTH, VM_FLAG_MMIO,(void*) EXTENDED_BIOS_START_ADDR); 
+  
+  static char* current_sig_ptr = NULL;
+  if(current_sig_ptr != NULL)
+    return current_sig_ptr;
+
+  
+
+  current_sig_ptr = (char*) vmm_alloc((uintptr_t) NULL, EXTENDED_BIOS_LENGTH, VM_FLAG_MMIO,(void*) EXTENDED_BIOS_START_ADDR); 
   if(check_apic()){
     char* end_ptr = (char*) EXTENDED_BIOS_END_ADDR;
     for(; current_sig_ptr < end_ptr; current_sig_ptr = current_sig_ptr + 16){
-      if(mem_cmp(current_sig_ptr, "RSD PTR ", RSDP_SIG_SIZE)){
+      if(memcmp(current_sig_ptr, "RSD PTR ", RSDP_SIG_SIZE)){
         return (struct rsdp_descriptor_t*) current_sig_ptr;
       }
     } 
@@ -63,8 +70,11 @@ bool validate_rsdp(struct rsdp_descriptor_t* rsdp){
 }
 
 
-struct rsdp_t* get_apic_table(struct rsdp_descriptor_t* rsdp_desc){
-  struct rsdp_t* rsdt_ptr = vmm_alloc((uintptr_t) NULL, 0x1000, VM_FLAG_MMIO, rsdp_desc);
+struct rsdp_t* get_acpi_table(struct rsdp_descriptor_t* rsdp_desc, const char* sig){
+  static struct rsdp_t* rsdt_ptr = NULL;
+  if(rsdt_ptr == NULL){
+    rsdt_ptr = vmm_alloc((uintptr_t) NULL, 0x2000, VM_FLAG_MMIO, rsdp_desc);
+  }
 
 
   // Skill issue with C right here
@@ -75,10 +85,10 @@ struct rsdp_t* get_apic_table(struct rsdp_descriptor_t* rsdp_desc){
   uint32_t rsdt_length = (rsdt_ptr->sdt_header.length - sizeof(struct acpi_sdt_header_t)) / 4; 
   for(uint8_t i = 0; i < rsdt_length; i++){
     sdt_entry = (struct acpi_sdt_header_t*) sdt_entry_array[i];
-    if(mem_cmp(sdt_entry->signature, "APIC", 4)){
-      //printstr("Found ACPI table at ");
-      //printlong((uint64_t) sdt_entry);
-      //printc('\n');
+    if(memcmp(sdt_entry->signature, sig, 4)){
+      printstr("Found ACPI table at ");
+      printlong((uint64_t) sdt_entry);
+      printc('\n');
 
       return (struct rsdp_t*) sdt_entry; 
     }  
