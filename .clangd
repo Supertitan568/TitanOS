@@ -1,0 +1,5 @@
+CompileFlags:
+  Add: [-I/home/supertitan/coding/personal/titanOS/src/include]
+
+Completion:
+  HeaderInsertion: Never

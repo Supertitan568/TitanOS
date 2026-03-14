@@ -6,25 +6,35 @@ ifeq ($(MAKECMDGOALS), test)
 	CC_FLAGS += -D TEST=1	
 endif
 
-BOOT_SRCS= src/boot.S src/stage2.S
-BOOT_OBJS= $(BOOT_SRCS:.S=.o)
+KERNEL_SRC_DIR := src/kernel/
+BOOT_SRC_DIR := src/boot/
+INCLUDE_DIR := src/include/
 
-#KERNEL_SRCS= $(wildcard src/*.c)
-KERNELC_SRCS= src/kernel.c src/vga.c src/cpu_ports.c src/unit_tests.c src/mem.c src/isr.c src/acpi.c src/apic.c src/keyboard.c src/kernel_heap_manager.c src/vmm.c src/pmm.c src/vmm_hashmap.c src/scheduler.c src/hpet.c
+BOOT_SRCS := $(shell find $(BOOT_SRC_DIR) -name '*.S')
+BOOT_OBJS := $(BOOT_SRCS:.S=.s.o)
 
-KERNELS_SRCS= src/isr_stubs.S src/gdt64.S
-KERNEL_OBJS=$(KERNELC_SRCS:.c=.o)
-KERNEL_OBJS	+= $(KERNELS_SRCS:.S=.o)
-ISO=bin/os.bin
+
+# Setting up kernel src variables 
+KERNELC_SRCS := $(shell find $(KERNEL_SRC_DIR) -name '*.c')
+KERNELS_SRCS := $(shell find $(KERNEL_SRC_DIR) -name '*.S') 
+KERNEL_OBJS := $(KERNELC_SRCS:.c=.c.o)
+KERNEL_OBJS	+= $(KERNELS_SRCS:.S=.s.o)
+
+
+BOOT_SECTOR_SIZE:=0
+KERNEL_SECTOR_SIZE:=0
+
+ISO := bin/os.bin
+GET_SECTORS = $(shell echo $$( expr $$(stat -c%s $(1)) / 512 ))
 
 all: boot run
 
-%.o: %.s
-	$(AS) -o $@ -c $<
+%.s.o: %.S
+	$(AS) -I$(INCLUDE_DIR) -o $@ -c $<
 
 
-%.o: %.c	
-	$(CC) $(CC_FLAGS) -o $@ -c $<
+%.c.o: %.c	
+	$(CC) -I$(INCLUDE_DIR) $(CC_FLAGS) -o $@ -c $<
 
 
 test: run
@@ -37,16 +47,40 @@ run: iso
 debug: iso
 	qemu-system-x86_64 -s -S --vga std --no-reboot -d int $(ISO)
 
+grub-debug: grub-iso
+	qemu-system-x86_64 -s -S --vga std --no-reboot -d int $(ISO)
+
+grub-run: grub-iso
+	qemu-system-x86_64 --vga std --no-reboot -d int $(ISO)
+bochs: iso
+	truncate -s 2949120 $(ISO)
+	bochs-gdb
+
+usb: iso 
+	./scripts/create_usb.sh
+
+grub-usb: grub-iso
+	./scripts/create_usb.sh
+
+grub-iso: kernel
+	mv bin/kernel.bin iso/boot/
+	grub-mkrescue -o $(ISO) iso/
 
 iso: boot kernel
-	dd if=/dev/zero of=$(ISO) bs=512 count=54
-	dd if=./bin/boot.bin of=$(ISO) conv=notrunc bs=512 seek=0 count=2 
-	dd if=./bin/kernel.bin of=$(ISO) conv=notrunc bs=512 seek=2 count=40  
+	$(eval BOOT_SECTOR_SIZE=$(call GET_SECTORS,./bin/boot.bin))
+	$(eval KERNEL_SECTOR_SIZE=$(call GET_SECTORS,./bin/kernel.bin))
+	$(eval KERNEL_SECTOR_SIZE=$(shell echo $$(expr $(KERNEL_SECTOR_SIZE) + 1)))
+	dd if=/dev/zero of=$(ISO) bs=2M count=1
+	dd if=./bin/boot.bin of=$(ISO) conv=notrunc bs=512 seek=0 count=$(BOOT_SECTOR_SIZE) 
+	dd if=./bin/kernel.bin of=$(ISO) conv=notrunc bs=512 seek=$(BOOT_SECTOR_SIZE) count=$(KERNEL_SECTOR_SIZE) 
+	echo '2048,,L' | sfdisk $(ISO)
+
 
 
 boot: $(BOOT_OBJS)
-	ld $^ --oformat binary -Tlink.ld -o bin/boot.bin
-
+	ld $^ --oformat elf64-x86-64 -Tboot.ld -o bin/boot.elf
+	objcopy --only-keep-debug bin/boot.elf bin/boot_symbols.sym
+	objcopy -I elf64-x86-64 -O binary bin/boot.elf bin/boot.bin
 
 kernel: $(KERNEL_OBJS)
 	echo $^
@@ -56,6 +90,5 @@ kernel: $(KERNEL_OBJS)
 
 	
 clean:
-	rm src/*.o bin/*
-	 
+	rm $(BOOT_OBJS) $(KERNEL_OBJS) bin/*
 	 
