@@ -244,7 +244,8 @@ void vmm_free(void* start_region){
 
 void* vmm_alloc(uintptr_t start_region, size_t length, size_t flags, void* args){
   length = PAGE_ALIGN(length);
-
+  start_region &= 0xfffffffffffff000;
+  args = (void*) (((uintptr_t)args) & 0xfffffffffffff000);
   // Checks to see if the region requested already exists and if it does then just lengthens it else returns an error
   vm_object* current_vm_object = &head_obj;
   uintptr_t found;
@@ -296,7 +297,7 @@ void* vmm_alloc(uintptr_t start_region, size_t length, size_t flags, void* args)
   // TODO: Get rid of that assumption 
 
   for(int i = 0; i < (length + 0xfff) / 0x1000; i++){
-    if(flags & VM_FLAG_MMIO){
+    if(args){
       pt_paddr = args;
       pmm_alloc_specific_page(pt_paddr);
     }
@@ -318,6 +319,23 @@ void* get_new_kernel_stack_addr(){
   kernel_stack_ptr -= (KERNEL_STACK_SIZE + 0x1000);
   return (void*) kernel_stack_ptr; 
 }
+
+
+uintptr_t get_mmio_ptr(void* phys_region_start, size_t length){
+  length = PAGE_ALIGN(length);
+  static uintptr_t mmio_region = VGA_TEXT_BUFFER_BASE + PAGE_SIZE;
+
+  mmio_region += length;
+  return mmio_region - length;
+}
+
+void* alloc_mmio(void* phys_region_start, size_t length, size_t extra_flags){
+  // VGA buffer is one page long and is the only thing allocated before this runs
+  uintptr_t mmio_region = get_mmio_ptr(phys_region_start, length);
+  vmm_alloc(mmio_region, length, VM_FLAG_MMIO | extra_flags, phys_region_start);
+  return (void*) mmio_region;
+}
+
 
 void create_sections(void* stack_start){
   // Get a new page and map it into the new virutal memory space

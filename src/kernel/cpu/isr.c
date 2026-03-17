@@ -94,7 +94,17 @@ struct cpu_context_t* interrupt_handler(struct cpu_context_t* status){
   }
   else if(status->vec == 0x28){
     keyboard_handler();
-    new_context = schedule(status);
+    
+    // We have this here for right now because we do not have a timer for context switches
+    // TODO: Implement local apic timer and move this
+    static bool should_sched = true;
+    if(should_sched){
+      new_context = schedule(status);
+    }
+    else{
+      new_context = status;
+    }
+    should_sched = !should_sched;
   }
   else if(status->vec == 0x68){
     new_context = schedule(status);

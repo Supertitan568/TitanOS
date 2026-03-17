@@ -73,8 +73,7 @@ void send_local_apic_eoi(void* local_apic_regs){
 
 void* get_io_apic_ptr(){
   // Need Access to the MADT table
-  struct rsdp_descriptor_t* rsdp_ptr = get_rsdp();
-  struct rsdp_t* apic_ptr = get_acpi_table(rsdp_ptr, "APIC");
+  acpi_sdt_header_t* apic_ptr = get_acpi_table("APIC");
 
   // Entries start at 0x2c
   uint8_t* madt_entries = (void*) apic_ptr;

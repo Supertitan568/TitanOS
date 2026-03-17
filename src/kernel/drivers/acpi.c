@@ -1,28 +1,38 @@
-#include "acpi.h"
-#include <stdbool.h>
-#include <stdint.h>
-#include "mem.h"
-#include "vga.h"
-#include "vmm.h"
+#include <acpi.h>
+#include <vga.h>
+#include <vmm.h>
+#include <kernel_heap_manager.h>
+#include <mem.h>
+#include <libtitan.h>
 
 #define EXTENDED_BIOS_START_ADDR 0x000e0000
 #define EXTENDED_BIOS_END_ADDR 0x000fffff
 #define EXTENDED_BIOS_LENGTH EXTENDED_BIOS_END_ADDR - EXTENDED_BIOS_START_ADDR 
 #define RSDP_SIG_SIZE 8
 
-// TODO: Add support for XSDT
+rsdt_t* rsdt = NULL;
 
-static bool check_apic(){   
-  return true;
-}
+// This is necessary because the rsdt only stores physical memory pointers
+struct{
+  size_t length;
+  acpi_sdt_header_t** tables;
+}acpi_tables;
 
-static inline void print_signature(struct acpi_sdt_header_t* acpi_header){
+static inline void print_signature(acpi_sdt_header_t* acpi_header){
   for(int i=0; i<4; i++){
     printc(acpi_header->signature[i]);
   }
 }
 
-static void print_rsdt_info(struct rsdp_t* rsdt_ptr){
+
+static inline void print_oem_signature(acpi_sdt_header_t* acpi_header){
+  for(int i=0; i<6; i++){
+    printc(acpi_header->oemid[i]);
+  }
+}
+
+
+static void print_rsdt_info(rsdt_t* rsdt_ptr){
   printstr("RSDT Addr: ");
   printlong((uint64_t) rsdt_ptr);
   printc('\n');
@@ -37,62 +47,104 @@ static void print_rsdt_info(struct rsdp_t* rsdt_ptr){
 }
 
 
-struct rsdp_descriptor_t* get_rsdp(){
-  
+static rsdp_t* get_rsdp(struct multiboot_info* mb2_info){
   static char* current_sig_ptr = NULL;
   if(current_sig_ptr != NULL)
-    return current_sig_ptr;
+    return (rsdp_t*) current_sig_ptr;
 
+  struct multiboot_tag_new_acpi* xsdp_tag = (struct multiboot_tag_new_acpi*) get_mb2_tag(mb2_info, MULTIBOOT_TAG_TYPE_ACPI_NEW);
   
+  if(xsdp_tag != NULL){
+    current_sig_ptr = (char*) xsdp_tag->rsdp;
+    return (rsdp_t*) xsdp_tag->rsdp;
+  }
 
   current_sig_ptr = (char*) vmm_alloc((uintptr_t) NULL, EXTENDED_BIOS_LENGTH, VM_FLAG_MMIO,(void*) EXTENDED_BIOS_START_ADDR); 
-  if(check_apic()){
-    char* end_ptr = (char*) EXTENDED_BIOS_END_ADDR;
-    for(; current_sig_ptr < end_ptr; current_sig_ptr = current_sig_ptr + 16){
-      if(memcmp(current_sig_ptr, "RSD PTR ", RSDP_SIG_SIZE)){
-        return (struct rsdp_descriptor_t*) current_sig_ptr;
-      }
-    } 
-  }
+  char* end_ptr = (char*) EXTENDED_BIOS_END_ADDR;
+  for(; current_sig_ptr < end_ptr; current_sig_ptr += 16){
+    if(memcmp(current_sig_ptr, "RSD PTR ", RSDP_SIG_SIZE)){
+      return (rsdp_t*) current_sig_ptr;
+    }
+  } 
  return NULL;
 }
 
 
-bool validate_rsdp(struct rsdp_descriptor_t* rsdp){
-  uint8_t* byte_ptr = (uint8_t*) rsdp;
+static acpi_sdt_header_t* map_table(acpi_sdt_header_t* table){
+  
+  size_t offset = ((size_t)table) - (((size_t)table) & 0xfffffffffffff000);
+  void* new_table_page = (void*) alloc_mmio(table, PAGE_SIZE * 2, VM_FLAG_NONE);
+  acpi_sdt_header_t* new_table = (acpi_sdt_header_t*)((uintptr_t) new_table_page + offset); 
+
+  if(new_table->length > (PAGE_SIZE * 2)){
+    alloc_mmio(table + PAGE_SIZE * 2, PAGE_ALIGN(table->length - PAGE_SIZE * 2), VM_FLAG_NONE);
+  }
+  return new_table; 
+}
+
+
+static bool validate_checksum(uint8_t* p, size_t length){
   uint32_t checksum = 0;
 
-  for(int i = 0; i < sizeof(struct rsdp_descriptor_t); i++){
-    checksum += byte_ptr[i];
+  for(int i = 0; i < length; i++){
+    checksum += p[i];
   }
 
   return (checksum & 0xff) == 0;
 }
 
 
-struct rsdp_t* get_acpi_table(struct rsdp_descriptor_t* rsdp_desc, const char* sig){
-  static struct rsdp_t* rsdt_ptr = NULL;
-  if(rsdt_ptr == NULL){
-    rsdt_ptr = vmm_alloc((uintptr_t) NULL, 0x2000, VM_FLAG_MMIO, rsdp_desc);
-  }
-
-
-  // Skill issue with C right here
-  uint32_t* sdt_entry_array = (uint32_t*) &rsdt_ptr->sdt_addr; 
-  struct acpi_sdt_header_t* sdt_entry;
-
-  // Praying that this doesn't fail
-  uint32_t rsdt_length = (rsdt_ptr->sdt_header.length - sizeof(struct acpi_sdt_header_t)) / 4; 
-  for(uint8_t i = 0; i < rsdt_length; i++){
-    sdt_entry = (struct acpi_sdt_header_t*) sdt_entry_array[i];
-    if(memcmp(sdt_entry->signature, sig, 4)){
-      printstr("Found ACPI table at ");
-      printlong((uint64_t) sdt_entry);
-      printc('\n');
-
-      return (struct rsdp_t*) sdt_entry; 
+acpi_sdt_header_t* get_acpi_table(const char* sig){
+  for(int i = 0; i < acpi_tables.length; i++){
+    if(memcmp(acpi_tables.tables[i]->signature, sig, 4)){
+      return (acpi_sdt_header_t*) acpi_tables.tables[i]; 
     }  
   }
   
  return 0;
+}
+
+
+static void dump_acpi_info(){
+  if(rsdt != NULL && acpi_tables.tables != NULL){
+    printf("acpi: ACPI Version %d\n", rsdt->sdt_header.revision);
+    printf("acpi: ACPI OEM ");
+    print_oem_signature(&rsdt->sdt_header);
+    printc('\n');
+    for(int i=0; i<acpi_tables.length; i++){
+      printf("acpi: found the ");
+      print_signature(acpi_tables.tables[i]);
+      printc('\n');
+    }
+    
+  }
+}
+
+static void parse_rsdt(){
+  if(rsdt != NULL){
+    acpi_tables.length  = (rsdt->sdt_header.length - sizeof(acpi_sdt_header_t)) / 4;
+    acpi_tables.tables = (acpi_sdt_header_t**) kmalloc(sizeof(acpi_sdt_header_t*) * acpi_tables.length);
+    
+    for(int i=0; i<acpi_tables.length; i++){
+      acpi_tables.tables[i] = map_table((void*)rsdt->sdt_addr[i]);
+      if(!validate_checksum((uint8_t*) acpi_tables.tables[i], acpi_tables.tables[i]->length)){
+        ERROR("acpi", "table checksum failed");
+      }
+    }
+  }
+}
+
+bool acpi_init(struct multiboot_info* mb2_info){
+  // TODO: Support the xsdt
+  rsdp_t* rsdp = get_rsdp(mb2_info);
+  if(rsdp == NULL || !validate_checksum((uint8_t*) rsdp, sizeof(rsdp_t))){
+    PANIC("acpi", "rsdp not valid");
+  }
+  rsdt = (rsdt_t*) get_mmio_ptr((void*) rsdp->rsdt_addr, 2 * PAGE_SIZE);
+  rsdt = (rsdt_t*) vmm_alloc((uintptr_t)rsdt, 2 * PAGE_SIZE, VM_FLAG_READ_WRITE, (void*) (rsdp->rsdt_addr));
+  rsdt = (rsdt_t*) (((uintptr_t) rsdt) + ((uintptr_t)rsdp->rsdt_addr) - (((uintptr_t)rsdp->rsdt_addr) & 0xfffffffffffff000));
+  parse_rsdt();
+  dump_acpi_info();
+
+  return true;
 }

@@ -22,6 +22,7 @@
 #ifndef MULTIBOOT_HEADER
 #define MULTIBOOT_HEADER 1
 
+#include <libtitan.h>
 /* How many bytes from the start of the file we search for the header.  */
 #define MULTIBOOT_SEARCH			32768
 #define MULTIBOOT_HEADER_ALIGN			8
@@ -417,6 +418,16 @@ struct multiboot_tag_load_base_addr
   multiboot_uint32_t size;
   multiboot_uint32_t load_base_addr;
 };
+
+static inline void* get_mb2_tag(struct multiboot_info* mb2_info, int type){
+  struct multiboot_tag* tag = (struct multiboot_tag*) mb2_info->tags;
+  for(; tag->type != MULTIBOOT_HEADER_TAG_END && tag->type != type; tag = (struct multiboot_tag*) ALIGN_UP(((uintptr_t) tag) + tag->size, MULTIBOOT_INFO_ALIGN));
+  if(tag->type != type){
+    ERROR("mb2", "tag not found");
+    return NULL;
+  }
+  return (void*) tag;
+}
 
 #endif /* ! ASM_FILE */
 

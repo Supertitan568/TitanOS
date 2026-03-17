@@ -2,7 +2,8 @@
 #define LIBTITAN_H
 #include "vga.h"
 #include <stdint.h>
-
+#include <stddef.h>
+#include <stdbool.h>
 extern char KERNEL_OFFSET[];
 extern char kernel_byte_size[];
 extern char KERNEL_PHYS[];
