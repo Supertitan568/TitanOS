@@ -6,7 +6,7 @@
 void setup_idt();
 void load_idt();
 
-struct __attribute__ ((packed)) cpu_context_t {
+typedef struct __attribute__ ((packed)) cpu_context_t{
   uint64_t rax;
   uint64_t rbx; 
   uint64_t rcx; 
@@ -31,6 +31,6 @@ struct __attribute__ ((packed)) cpu_context_t {
   uint64_t flags_i;
   uint64_t rsp_i;
   uint64_t ss_i;
-};
+}cpu_context_t ;
 
 #endif // !ISR_H

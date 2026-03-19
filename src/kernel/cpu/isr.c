@@ -78,8 +78,8 @@ void load_idt(){
   asm volatile("sti");
 }
 
-struct cpu_context_t* interrupt_handler(struct cpu_context_t* status){
-  struct cpu_context_t* new_context;
+cpu_context_t* interrupt_handler(cpu_context_t* status){
+  cpu_context_t* new_context;
   if(status->vec <= 32){
     printstr("\nKernel Panic!!: ");
     printstr(exception_types[status->vec]);
