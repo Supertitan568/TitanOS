@@ -12,6 +12,15 @@
 #define PIC_SLAVE_COMMAND_PORT 0xa0
 #define PIC_SLAVE_DATA_PORT 0xa1
 
+typedef enum madt_types_t{
+  MADT_LAPIC,
+  MADT_IOAPIC,
+  MADT_IOAPIC_OVERRIDE,
+  MADT_IOAPIC_NMI,
+  MADT_LAPIC_NMI,
+  MADT_LAPIC_ADDR_OVERRIDE,
+  MADT_LX2APIC
+} madt_types_t;
 void* local_apic_regs;
 void* io_apic_regs;
 
@@ -37,24 +46,16 @@ void disable_8259(){
   outb(PIC_SLAVE_DATA_PORT, 0xff);
 }
 
-void apic_setup(){
-  local_apic_regs = vmm_alloc((uintptr_t) 0xffffff8000400000, 0x1000, VM_FLAG_MMIO | 0x10, (void*) 0xfee00000);
-  local_apic_enable(local_apic_regs); 
-  
-  io_apic_regs = vmm_alloc((uintptr_t) 0xffffff8000401000, 0x1000, VM_FLAG_MMIO | 0x10, (void*) 0xfec00000);
-  
-  remap_ioredtbl((void*) io_apic_regs); 
-}
 
-void* get_local_apic_addr(){
-  uint64_t msr_reg; 
+
+void* get_lapic(){
+  uintptr_t msr_reg; 
   asm volatile ("mov $0x1b, %%rcx;"
                 "rdmsr;" 
                 "mov %%rax, %0;" : "=a" (msr_reg) :);
-  printlong((uint64_t) msr_reg);
-  printc('\n');
+  printf("apic: lapic is at %lu\n", (uint64_t) msr_reg); 
   // Returning the base addr of local apic in bits 12 to 51
-  return (void*) ((msr_reg >> 12) & 0x000fffff); 
+  return (void*) (((msr_reg >> 12) & 0x000fffff) << 12); 
 }
 
 
@@ -71,25 +72,46 @@ void send_local_apic_eoi(void* local_apic_regs){
   *((volatile uint32_t*) (((uintptr_t) local_apic_regs) + 0xb0)) = 0;
 }
 
-void* get_io_apic_ptr(){
+static void* get_ioapic(){
+  //TODO: Handle case of there being more than one ioapic
+  //TODO: Clean this up using structs for the madt and the entries
   // Need Access to the MADT table
-  acpi_sdt_header_t* apic_ptr = get_acpi_table("APIC");
-
-  // Entries start at 0x2c
-  uint8_t* madt_entries = (void*) apic_ptr;
-  madt_entries += 0x2c;
+  acpi_sdt_header_t* madt = get_acpi_table("APIC");
+  if(madt == NULL){
+    PANIC("apic", "madt could not be found")
+  }
+  // Entries start at after the header + 8 bytes of lapic addr and flags
+  uint8_t* madt_entries = ((uint8_t*) (madt + 1)) + 8;
 
   // Goes through the MADT table until it finds a type 1 entry
-  while(1){
-    if(*madt_entries != 1){
-      madt_entries += *(madt_entries + 1);
-    }
-    else{
-      return (void*) (*((uint32_t*) (madt_entries + 4)));
-    }
+  while((uintptr_t)madt_entries <= ((uintptr_t)madt) + madt->length){
+    switch((madt_types_t) *madt_entries){
+      case MADT_LAPIC:
+        LOG("apic", "found an lapic");
+        break;
+      case MADT_IOAPIC:
+        void* ioapic_phys = (void*) (*(uintptr_t*)(madt_entries + 4));
+        printf("apic: ioapic is at %lu\n", (uint64_t) ioapic_phys); 
+        return (void*) ioapic_phys;
+      case MADT_IOAPIC_OVERRIDE:
+        LOG("apic", "found an ioapic override");
+        break;
+      case MADT_IOAPIC_NMI:
+        LOG("apic", "found an ioapic override");
+        break;
+      case MADT_LAPIC_NMI:
+        LOG("apic", "found an lapic");
+        break;
+      case MADT_LAPIC_ADDR_OVERRIDE:
+        LOG("apic", "found an lapic");
+        break;
+      default: 
+        PANIC("apic", "found an unknown madt type");
+    };
+    madt_entries += *(madt_entries + 1);
   }
-
-  return 0x0;
+  // if we got to the end we did not find the ioapic
+  return NULL;
 }
 
 
@@ -124,4 +146,16 @@ void remap_ioredtbl(void* io_apic_base){
  
 }
 
-
+void apic_init(){
+  uintptr_t lapic_phys = (uintptr_t) get_lapic();
+  local_apic_regs = (void*) CALC_VIRT_ADDRESS(lapic_phys, (uintptr_t)alloc_mmio((void*)PAGE_ALIGN_DOWN(lapic_phys), PAGE_SIZE, VM_FLAG_READ_WRITE));
+  local_apic_enable(local_apic_regs); 
+  
+  void* ioapic_phys = get_ioapic();
+  if(ioapic_phys == NULL){
+    PANIC("apic", "ioapic not found");
+  } 
+  io_apic_regs = alloc_mmio(ioapic_phys, PAGE_SIZE, VM_FLAG_READ_WRITE);
+  
+  remap_ioredtbl(io_apic_regs); 
+}

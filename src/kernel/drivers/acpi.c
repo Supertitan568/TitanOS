@@ -101,7 +101,7 @@ acpi_sdt_header_t* get_acpi_table(const char* sig){
     }  
   }
   
- return 0;
+ return NULL;
 }
 
 

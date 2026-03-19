@@ -23,6 +23,9 @@ extern char KERNEL_PHYS[];
    (_x + (_a - 1)) & ~(_a - 1); })
 
 #define PAGE_ALIGN(n) (((n) + 0xfff) / 0x1000) * 0x1000
+#define PAGE_ALIGN_DOWN(n) (n & 0xfffffffffffff000)
+// Basically just calculates the virtual address from a physical address when it is not page aligned 
+#define CALC_VIRT_ADDRESS(p,v) (PAGE_ALIGN_DOWN(v) + (p & 0xfff))
 #define PAGE_SIZE 0x1000
 
 static inline int pow(int x, int y){

@@ -7,14 +7,12 @@
 #define IOREDTBL(i) (2 * i + 0x10)
 
 void disable_8259();
-void* get_local_apic_addr();
 void local_apic_enable(void* local_apic_regs);
 inline uint64_t get_apic_id_reg(void* local_apic_regs){
   return *((uint64_t*) local_apic_regs);
 }
-void* get_io_apic_ptr();
 void remap_ioredtbl(void* io_apic_base);
 void send_local_apic_eoi(void* local_apic_regs);
-void apic_setup();
+void apic_init();
 
 #endif // APIC_H

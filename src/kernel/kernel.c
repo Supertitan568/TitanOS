@@ -58,7 +58,7 @@ int kernel_start(struct multiboot_info* mb_info){
   
   acpi_init(mb_info);
   // Setting up the apic for the keyboard and other things
-  apic_setup();
+  apic_init();
   
   // check_scanset(); 
   sched_init(inital_vmm);
