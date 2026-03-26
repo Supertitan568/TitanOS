@@ -16,37 +16,54 @@ typedef enum {
 
 void idle_main();
 
+typedef struct process_t process_t;
+
 typedef struct thread_t{
   size_t tid;
+  process_t* parent;
   cpu_context_t context;
+  void* stack;
   status_t status;
   char name[NAME_MAX];
   struct thread_t* next;
 } thread_t;
 
-typedef struct process_t{
+struct process_t{
   size_t pid;
   thread_t* threads; 
   vmm_t vmm;
   char name[NAME_MAX];
   struct process_t* next;
-}process_t;
+};
 
 
 process_t* idle_proc = NULL;
 process_t* head_proc = NULL;
+process_t* current_process = NULL;
+thread_t* current_thread = NULL;
 
 extern uintptr_t* current_pml4t_ptr;
 extern vmm_hashmap_t vmm_hashmap;
+
 
 static void tss_init(){
   void* nmi_stack = get_new_kernel_stack_addr();
 }
 
 
+static void thread_wrapper(void (*thread_start)(void*), void* arg ){
+  thread_start(arg);
+  current_thread->status = DEAD;
+  while(1){
+    continue;
+  }
+}
+
+
 thread_t* create_thread(process_t* p, char name[], void* func, void* func_arg){
   static size_t next_tid;
   thread_t* t = kmalloc(sizeof(thread_t));
+
   if(p->threads){
     thread_t* scan = p->threads;
     for(; scan->next != NULL; scan = scan->next);
@@ -64,30 +81,32 @@ thread_t* create_thread(process_t* p, char name[], void* func, void* func_arg){
   
   void* kernel_stack = get_new_kernel_stack_addr();
   create_sections((void*) kernel_stack);
+  t->stack = kernel_stack;
+  t->parent = p;
   // Creating the thread context
   cpu_context_t new_context = {
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    (uint64_t) func,
-    0x8,
-    0x00000202,
-    (uint64_t) kernel_stack + KERNEL_STACK_SIZE - 0x8,
-    0x10
+    .rax = 0,
+    .rbx = 0,
+    .rcx = 0,
+    .rdx = 0,
+    .rdi = (uint64_t) func,
+    .rsi = (uint64_t) func_arg,
+    .rbp = 0,
+    .r8 = 0,
+    .r9 = 0,
+    .r10 = 0,
+    .r11 = 0,
+    .r12 = 0,
+    .r13 = 0,
+    .r14 = 0,
+    .r15 = 0,
+    .vec = 0,
+    .error_code = 0,
+    .rip_i = (uint64_t) thread_wrapper,
+    .cs_i = 0x8,
+    .flags_i = 0x00000202,
+    .rsp_i = (uint64_t) kernel_stack + KERNEL_STACK_SIZE - 0x8,
+    .ss_i = 0x10
   };
    
   t->context = new_context;
@@ -105,7 +124,7 @@ process_t* create_proc(void* func_point, vmm_t vmm_instance, bool add_to_queue){
   new_proc->pid = next_pid++; 
   
   // Creating inital thread
-  create_thread(new_proc, "t1", func_point, NULL);
+  create_thread(new_proc, "thread", func_point, NULL);
 
   new_proc->vmm = vmm_instance;
 
@@ -125,38 +144,34 @@ process_t* create_proc(void* func_point, vmm_t vmm_instance, bool add_to_queue){
 }
 
 
-
 void idle_main(){
-  while(true)
+  while(true){
     continue;
+  }
 }
 
 void print1(){
-  while(1){
+  for(int i = 0; i < 5; i++){
     for(int i = 0; i < 10; i++)
       printstr("Printing 1\n");
   }
 }
 
 void print2(){
-  while(1){
+  for(int i = 0; i < 10; i++){
     printstr("Printing 2\n");
   }
 }
 
-process_t* current_process = NULL;
-thread_t* current_thread = NULL;
 
-static void switch_vm_space(){
-  void* new_pml4t_paddr = current_process->vmm.pml4t;
-  asm("mov %0, %%cr3" : "=r" (new_pml4t_paddr));
-  current_pml4t_ptr = (uintptr_t*) get_ptbl_vaddr(vmm_hashmap, new_pml4t_paddr); 
+static void switch_vm_space(uintptr_t new_pml4t_paddr){
+  asm volatile("mov %0, %%cr3" :: "r" (new_pml4t_paddr) : "memory");
+  current_pml4t_ptr = (uintptr_t*) get_ptbl_vaddr(vmm_hashmap,(void*) new_pml4t_paddr); 
 }
 
 
-
 static void switch_process(){
-  if(current_process != idle_proc){
+  if(head_proc != NULL){
     if(current_process->next == NULL){
       current_process = head_proc;
     }
@@ -165,24 +180,92 @@ static void switch_process(){
     }
   }
   else{
-    if(head_proc != NULL){
-      current_process = head_proc;
+    current_process = idle_proc;
+  }
+  
+
+  switch_vm_space((uintptr_t) current_process->vmm.pml4t);
+}
+
+void reap_thread(thread_t* t);
+
+void reap_process(process_t* p){
+  process_t* curr_p = head_proc;
+  if(curr_p == p){
+    head_proc = curr_p->next;
+  }
+  else{
+    while(curr_p->next != p){
+      curr_p = curr_p->next; 
     }
-    else{
-      current_process = idle_proc;
+
+    curr_p->next = curr_p->next->next;
+  }
+  
+
+  // We kill all threads that may or may not be READY or RUNNING
+  thread_t* t = p->threads;
+  thread_t* t_to_reap;
+  while(t != NULL){
+    t_to_reap = t;
+    t = t->next;
+    reap_thread(t_to_reap);
+  }
+  
+  // We free everything not in kernel space
+  vm_object* vm_space = &p->vmm.head;
+  vm_object* vms_to_free;
+  while(vm_space->base != KERNEL_TEXT_START){
+    vms_to_free = vm_space;
+    vm_space = vm_space->next;
+    vmm_free((void*)vms_to_free->base);
+  }
+  
+  switch_vm_space((uintptr_t) idle_proc->vmm.pml4t);
+  vmm_hashmap_remove(vmm_hashmap, p->vmm.pml4t);
+  kfree(p);
+}
+
+void reap_thread(thread_t* t){
+  vmm_free(t->stack);
+
+  thread_t* current_t = t->parent->threads;
+  
+  // Should never happen because that would make this a dangling thread that is not tracked by its parent 
+  ASSERT(current_t != NULL);
+  
+  if(current_t == t){
+    t->parent->threads = current_t->next;  
+  }
+  else{
+    while(current_t->next != t){
+      current_t = current_t->next; 
     }
+    
+    current_t->next = current_t->next->next;
+  }
+  
+  if(t->parent->threads == NULL){
+    reap_process(t->parent);
   }
 
-  switch_vm_space();
+  kfree(t);
 }
 
 cpu_context_t* schedule(cpu_context_t* context){
-  current_thread->context = *context;
-  
-  if(current_thread->status != DEAD){
-    current_thread->status = READY;
+  if(current_thread != idle_proc->threads){
+    current_thread->context = *context;
   }
 
+  thread_t* prev_t = current_thread; 
+  if(prev_t->status == DEAD){
+    reap_thread(prev_t);  
+  }
+  else{
+    prev_t->status = READY;
+  }
+
+  // Switching the thread
   if(current_thread->next){
     current_thread = current_thread->next;
   }
@@ -190,7 +273,9 @@ cpu_context_t* schedule(cpu_context_t* context){
     switch_process();
     current_thread = current_process->threads;
   }
+  
 
+  
   // Might be useful when enabling smp
   if(current_thread->status == READY){
     current_thread->status = RUNNING;

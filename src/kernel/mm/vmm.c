@@ -10,14 +10,10 @@
 #include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
-// Bits 0 - 11 are page flags 
-
-// This makes it so it rounds up to the nearest page boundry
 
 uintptr_t* current_pml4t_ptr = (uintptr_t*) INITIAL_PML4T_ADDR;
 
-vmm_hashmap_t vmm_hashmap = NULL;
-
+extern vmm_hashmap_t vmm_hashmap;
 extern char initial_pdpt[];  
 extern char initial_pd[];  
 extern char initial_pt[];
@@ -38,43 +34,35 @@ extern char initial_pt3_phys[];
 // My god I am using hella linked lists. This is more than I will probably ever use again.
 // This is the inital linked list for the kernel
 vm_object kernel_page_tbls_obj = {
-  KERNEL_PAGE_TBL_START,
-  0x6000,
-  VM_FLAG_READ_WRITE,
-  NULL
+  .base = KERNEL_PAGE_TBL_START,
+  .length = 0x6000,
+  .flags = VM_FLAG_READ_WRITE,
+  .next = NULL
 };
 
 
 vm_object kernel_pmm_obj = {
-  KERNEL_PMM_START,
-  0x1000,
-  VM_FLAG_READ_WRITE,
-  &kernel_page_tbls_obj
+  .base = KERNEL_PMM_START,
+  .length = 0x1000,
+  .flags = VM_FLAG_READ_WRITE,
+  .next = &kernel_page_tbls_obj
 };
 
 vm_object vga_text_buffer_obj = {
   .base = VGA_TEXT_BUFFER_BASE,
   .length = 0x1000,
   .flags = VM_FLAG_MMIO,
-  .next =  &kernel_pmm_obj 
+  .next = &kernel_pmm_obj 
 };
 
 vm_object kernel_text_obj = {
-  KERNEL_TEXT_START,
-  0x13000,   // This has to given at runtime
-  VM_FLAG_READ_WRITE,
-  &vga_text_buffer_obj
+  .base = KERNEL_TEXT_START,
+  .length = 0x13000,   // This has to given at runtime
+  .flags = VM_FLAG_READ_WRITE,
+  .next = &vga_text_buffer_obj
 };
 
-// We need this dummy_proc object at 0x0000 to start our vm_object list
-vm_object head_obj  = {
-  0x00000000,
-  0,
-  VM_FLAG_READ_WRITE,
-  &kernel_text_obj
-};
-
-
+vmm_t current_vmm;
 
 static inline uint16_t get_index(uintptr_t addr, uint8_t table_level){
   // This gets the index of the block in the page table we are looking at
@@ -87,6 +75,11 @@ static inline uintptr_t get_block_vaddr(uintptr_t table_virt_addr, uint16_t tabl
   return table_virt_addr + (table_index << (9 * table_level  + 12)); 
 }
 
+static uintptr_t get_current_pml4t_phys_addr(){
+  uintptr_t current_pml4t;
+  asm("mov %%cr3, %0;" : "=r" (current_pml4t));
+  return current_pml4t;
+}
 
 void umap(uint64_t* table_ptr, uintptr_t table_virt_addr, uint8_t table_level, uintptr_t region_start_addr, uintptr_t region_end_addr){
   // start and end indexes of the region we are looking at
@@ -95,7 +88,7 @@ void umap(uint64_t* table_ptr, uintptr_t table_virt_addr, uint8_t table_level, u
 
   for(uint16_t i = start_index; i < end_index; i++){
     // basically if the table is higher than a pt
-    uintptr_t pt_phys_addr = (uintptr_t) (*(table_ptr + i) & 0xfffffffffffff000);
+    uintptr_t pt_phys_addr = (uintptr_t) PAGE_ALIGN_DOWN(table_ptr[i]);
 
     if(table_level){
       // Addresses of the current block 
@@ -107,7 +100,7 @@ void umap(uint64_t* table_ptr, uintptr_t table_virt_addr, uint8_t table_level, u
       uintptr_t end_addr = region_end_addr;
       
       // We need to see if the bounds we are looking at in the main function are in the sub block
-      if(region_start_addr < block_start_addr){
+      if(region_start_addr <= block_start_addr){
         start_addr = block_start_addr;
       }
       if(region_end_addr >= block_end_addr){
@@ -118,29 +111,27 @@ void umap(uint64_t* table_ptr, uintptr_t table_virt_addr, uint8_t table_level, u
 
       // If the entire block is in the region we need to free it 
       if(region_start_addr <= block_start_addr && region_end_addr >= block_end_addr){
-        pmm_free_page((void*) (*(table_ptr + i) & 0xfffffffffffff000));
-        //vmm_hashmap_remove((void*) (*(table_ptr + i) & 0xfffffffffffff000));
-        *(table_ptr + i) = 0;
+        vmm_hashmap_remove(vmm_hashmap, (void*)PAGE_ALIGN_DOWN(table_ptr[i]));
+        table_ptr[i] = 0;
       }
     }
     // This is for when we are at the bottom level pt. We are finally at the lowest region we can find
     else {
       // Clear the entry
-      pmm_free_page((void*) (*(table_ptr + i) & 0xfffffffffffff000));
-      //vmm_hashmap_remove((void*) (*(table_ptr + i) & 0xfffffffffffff000));
-      *(table_ptr + i) = 0;
+      pmm_free_page((void*) pt_phys_addr);
+      table_ptr[i] = 0;
     }
   }
 }
 
 bool mmap(uint64_t* root_table, void* paddr, void* vaddr, size_t flags){
+  // TODO: invalidate pages in the TLB
   uintptr_t pt_offset;
   uint64_t pt_value;
   
   uint64_t* pt_vaddr = root_table;
   void* pt_paddr;
   
-  // Implement adding vmm epoch increment if vmm epoch incremented
   for(int pt_level = 3; pt_level > 0; pt_level--){
     pt_offset = ((((uintptr_t) vaddr) >> (9 * pt_level + 12)) & 0x1ff);
     pt_value = pt_vaddr[pt_offset];
@@ -154,19 +145,11 @@ bool mmap(uint64_t* root_table, void* paddr, void* vaddr, size_t flags){
     }
     else{
       // We need to create the new page table in this case
-      if(!(pt_paddr = pmm_alloc_page())){
-        return false; 
-      }
+      
+      pt_paddr = alloc_pg_table();
 
-      kernel_page_tbls_obj.length += 0x1000;
-      vmm_hashmap_put(vmm_hashmap, 1, (void*) (kernel_page_tbls_obj.base + kernel_page_tbls_obj.length), pt_paddr);
-      // Is this recursion a code smell? Maybe. It works tho
-      if(!mmap(root_table, pt_paddr, (void*) (kernel_page_tbls_obj.base + kernel_page_tbls_obj.length) , 0)){
-        return false;
-      }
       pt_vaddr[pt_offset] = ((uint64_t) pt_paddr) | 0x3;
-      pt_vaddr = (void*) (kernel_page_tbls_obj.base + kernel_page_tbls_obj.length); 
-      memset(pt_vaddr, 0, 0x1000);
+      pt_vaddr = get_ptbl_vaddr(vmm_hashmap, pt_paddr); 
       
     }
 
@@ -182,7 +165,7 @@ bool vmm_lengthen(uintptr_t start_region, int inc){
   // We can only work with pages so the lengths in the vmm obj needs to be page aligned
   inc = PAGE_ALIGN(inc);
 
-  vm_object* curr_vm_obj = &head_obj;
+  vm_object* curr_vm_obj = &current_vmm.head;
   
   // We look through the list for the requested region
   while(curr_vm_obj != NULL){
@@ -232,27 +215,35 @@ bool vmm_lengthen(uintptr_t start_region, int inc){
 void vmm_free(void* start_region){
   // I'm going to assume for right now that this exists in here and it has been allocated with kmalloc
   // TODO: get rid of those assumptions
-  vm_object* curr_vmm_obj = &head_obj;
-  while(((void*) curr_vmm_obj->next->base) != start_region){
-    curr_vmm_obj = curr_vmm_obj->next; 
+  vm_object* curr_vmm_obj = &current_vmm.head;
+  if(current_vmm.head.base == (uintptr_t)start_region){
+    return;   
+  }
+  else{
+    while(((void*) curr_vmm_obj->next->base) != start_region){
+      curr_vmm_obj = curr_vmm_obj->next; 
+    }
   }
   
-  vm_object* tmp_ptr = curr_vmm_obj->next;
+  
+  umap((uint64_t*)get_current_pml4t_phys_addr(), (uintptr_t)current_pml4t_ptr, 3, (uintptr_t)start_region, (uintptr_t)start_region + curr_vmm_obj->next->length);
+  vm_object* tmp_obj = curr_vmm_obj->next;
   curr_vmm_obj->next = curr_vmm_obj->next->next;
-  kfree(tmp_ptr);
+  kfree(tmp_obj);
+
 }
 
 void* vmm_alloc(uintptr_t start_region, size_t length, size_t flags, void* args){
   length = PAGE_ALIGN(length);
-  start_region &= 0xfffffffffffff000;
-  args = (void*) (((uintptr_t)args) & 0xfffffffffffff000);
+  start_region = PAGE_ALIGN_DOWN(start_region);
+  args = (void*) PAGE_ALIGN_DOWN((uintptr_t) args);
   // Checks to see if the region requested already exists and if it does then just lengthens it else returns an error
-  vm_object* current_vm_object = &head_obj;
+  vm_object* current_vm_object = &current_vmm.head;
   uintptr_t found;
   if((void*) start_region == NULL){
     // Going through the list until we find a space with enough space to put a region with the requested size
     // We are just using first fit here
-    current_vm_object = &head_obj;
+    current_vm_object = &current_vmm.head;
     uintptr_t base;
     while(current_vm_object->next != NULL){
       base = current_vm_object->base + current_vm_object->length;
@@ -286,7 +277,6 @@ void* vmm_alloc(uintptr_t start_region, size_t length, size_t flags, void* args)
   new_region->base = found;
   new_region->length = length;
   new_region->flags = flags;
-
   new_region->next = current_vm_object->next;
   current_vm_object->next = new_region;
 
@@ -347,16 +337,8 @@ void create_sections(void* stack_start){
 
 static void* create_new_pml4t(){
   // The new pml4t will just be at the end of the current page map space
-  uintptr_t* new_pml4t_vaddr = (uintptr_t*) kernel_page_tbls_obj.base + kernel_page_tbls_obj.length;
-  kernel_page_tbls_obj.length += 0x1000;
-
-  void* new_pml4t_paddr = pmm_alloc_page(); 
-  
-  // Maps the allocated page into the current memory space
-  if(! mmap((void*) current_pml4t_ptr, new_pml4t_paddr, new_pml4t_vaddr, 0)){
-    printstr("Error:page map allocation failed");
-  }
-  vmm_hashmap_put(vmm_hashmap, 1, new_pml4t_vaddr, new_pml4t_paddr);
+  void* new_pml4t_paddr = alloc_pg_table();
+  uintptr_t* new_pml4t_vaddr = get_ptbl_vaddr(vmm_hashmap, new_pml4t_paddr); 
 
   // Copy over kernel space from current pml4t into the new one
   *(new_pml4t_vaddr + 511) = *(current_pml4t_ptr + 511);
@@ -364,7 +346,7 @@ static void* create_new_pml4t(){
 }
 
 
-vmm_t create_vmm(vmm_t current_vmm){
+vmm_t create_vmm(vmm_t new_vmm){
   return (vmm_t) {
     .head = {
       0x00000000,
@@ -372,9 +354,9 @@ vmm_t create_vmm(vmm_t current_vmm){
       VM_FLAG_READ_WRITE,
       &kernel_text_obj
     },
-    .current_vmm_epoch = current_vmm.current_vmm_epoch,
+    .current_vmm_epoch = new_vmm.current_vmm_epoch,
 
-    .previous_vmm_epoch = current_vmm.previous_vmm_epoch, 
+    .previous_vmm_epoch = new_vmm.previous_vmm_epoch, 
 
     .pml4t = create_new_pml4t()
   };  
@@ -394,8 +376,6 @@ vmm_t vmm_init(){
   vmm_hashmap_put(vmm_hashmap, 1,  (void*) initial_pt3,  (void*) initial_pt3_phys);
 
   //TODO: Check binary for correctness
-  uintptr_t current_pml4t;
-  asm("mov %%cr3, %0;" : "=r" (current_pml4t));
   vmm_t new_vmm = {
     {
       0x00000000,
@@ -405,8 +385,10 @@ vmm_t vmm_init(){
     },
     0,
     0,
-    (void*) current_pml4t 
-  }; 
+    (void*) get_current_pml4t_phys_addr() 
+  };
+
+  current_vmm = new_vmm;
 
   return new_vmm;
 }

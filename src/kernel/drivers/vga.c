@@ -10,8 +10,8 @@
 #include "vmm.h"
 #include <stdint.h>
 #include <stdarg.h>
+#include <locks.h>
 
-// TODO: Get this at run time from the vmm
 #define VGA_PHYS_START_ADDR 0xb8000 
 #define VGA_PHYS_END_ADDR 0xb8fa0
 #define VGA_COMMAND 0x3d4
@@ -40,10 +40,6 @@ void move_cursor(){
 }
 
 static void scroll_down(){
-  //TODO: Fix undefined use of memcpy
-  //      It will work for now but might 
-  //      break if I change the implementation
-  
   uint8_t* vga_text_buffer = (uint8_t*) cursor.vga_out;
   size_t line_length = VGA_WIDTH * sizeof(vga);
   memcpy((void*)vga_text_buffer,(void*) (cursor.vga_out + VGA_WIDTH), VGA_LENGTH - line_length);
@@ -144,6 +140,8 @@ static void printint(int d){
 }
 
 void printf(const char* format, ...){
+  static spinlock_t lock;
+  acquire(&lock);
   va_list args;
   va_start(args, format);
   char* current_char = (char*) format;
@@ -175,4 +173,5 @@ void printf(const char* format, ...){
   }
   va_end(args); 
   move_cursor();
+  release(&lock);
 }

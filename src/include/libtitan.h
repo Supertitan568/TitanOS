@@ -15,8 +15,9 @@ extern char KERNEL_PHYS[];
     continue; \
   }
 #define ASSERT(condition) \
-  if(condition)\
-    PANIC("ASSERT", "Failed ASSERT")
+  if(!condition){\
+    PANIC("ASSERT", "Failed ASSERT")\
+  }
 #define ALIGN_UP(x, a) \
 ({ typeof(x) _x = (x); \
    typeof(a) _a = (a); \

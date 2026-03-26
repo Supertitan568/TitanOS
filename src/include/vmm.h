@@ -24,7 +24,6 @@ extern char initial_pml4t[];
 #define KERNEL_STACK_SIZE 0x2000
 #define KERNEL_SIZE kernel_byte_size
       
-// Literally just the kernel size from the makefile. We should get this from the linker
 typedef struct vm_obj{
   uintptr_t base;
   size_t length;
