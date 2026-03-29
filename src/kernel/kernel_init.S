@@ -151,7 +151,7 @@ _setup_pt:
   # Mapping the PDPT into the PML4T
   mov $511, %edx
   mov $initial_pml4t_phys, %edi
-  mov $0x3, %eax
+  mov $0x7, %eax
   mov $initial_pdpt_phys, %ebx 
   call _map_page
    
@@ -243,7 +243,7 @@ _setup_pt:
 # %ecx : number of pages to map
 _add_pe_protected:
   pushal
-  mov $0x3, %eax
+  mov $0x7, %eax
 _add_pe_protected_loop:
   call _map_page
   add $0x1000, %ebx

@@ -6,14 +6,13 @@
 #include "kernel_heap_manager.h"
 #include "vga.h"
 #include <libtitan.h>
-// Compiler Header files
-#include <stdbool.h>
-#include <stddef.h>
-#include <stdint.h>
+#include <scheduler.h>
 
 uintptr_t* current_pml4t_ptr = (uintptr_t*) INITIAL_PML4T_ADDR;
 
 extern vmm_hashmap_t vmm_hashmap;
+extern process_t* current_process;
+
 extern char initial_pdpt[];  
 extern char initial_pd[];  
 extern char initial_pt[];
@@ -62,7 +61,7 @@ vm_object kernel_text_obj = {
   .next = &vga_text_buffer_obj
 };
 
-vmm_t current_vmm;
+vmm_t* current_vmm;
 
 static inline uint16_t get_index(uintptr_t addr, uint8_t table_level){
   // This gets the index of the block in the page table we are looking at
@@ -80,6 +79,14 @@ static uintptr_t get_current_pml4t_phys_addr(){
   asm("mov %%cr3, %0;" : "=r" (current_pml4t));
   return current_pml4t;
 }
+
+
+void switch_vm_space(vmm_t* vmm){
+  asm volatile("mov %0, %%cr3" :: "r" (vmm->pml4t) : "memory");
+  current_pml4t_ptr = (uintptr_t*) get_ptbl_vaddr(vmm_hashmap,(void*) vmm->pml4t);
+  current_vmm = vmm;
+}
+
 
 void umap(uint64_t* table_ptr, uintptr_t table_virt_addr, uint8_t table_level, uintptr_t region_start_addr, uintptr_t region_end_addr){
   // start and end indexes of the region we are looking at
@@ -148,7 +155,7 @@ bool mmap(uint64_t* root_table, void* paddr, void* vaddr, size_t flags){
       
       pt_paddr = alloc_pg_table();
 
-      pt_vaddr[pt_offset] = ((uint64_t) pt_paddr) | 0x3;
+      pt_vaddr[pt_offset] = ((uint64_t) pt_paddr) | 0x7;
       pt_vaddr = get_ptbl_vaddr(vmm_hashmap, pt_paddr); 
       
     }
@@ -157,7 +164,7 @@ bool mmap(uint64_t* root_table, void* paddr, void* vaddr, size_t flags){
 
   // After this we have the bottom pt. We just have to write our entry in
   pt_offset = (((uintptr_t) vaddr) >> 12) & 0x1ff;
-  pt_vaddr[pt_offset] = ((uint64_t) paddr) | flags | 0x3;
+  pt_vaddr[pt_offset] = ((uint64_t) paddr) | flags | 0x7;
   return true;
 }
 
@@ -165,7 +172,7 @@ bool vmm_lengthen(uintptr_t start_region, int inc){
   // We can only work with pages so the lengths in the vmm obj needs to be page aligned
   inc = PAGE_ALIGN(inc);
 
-  vm_object* curr_vm_obj = &current_vmm.head;
+  vm_object* curr_vm_obj = &current_vmm->head;
   
   // We look through the list for the requested region
   while(curr_vm_obj != NULL){
@@ -215,8 +222,8 @@ bool vmm_lengthen(uintptr_t start_region, int inc){
 void vmm_free(void* start_region){
   // I'm going to assume for right now that this exists in here and it has been allocated with kmalloc
   // TODO: get rid of those assumptions
-  vm_object* curr_vmm_obj = &current_vmm.head;
-  if(current_vmm.head.base == (uintptr_t)start_region){
+  vm_object* curr_vmm_obj = &current_vmm->head;
+  if(current_vmm->head.base == (uintptr_t)start_region){
     return;   
   }
   else{
@@ -238,12 +245,12 @@ void* vmm_alloc(uintptr_t start_region, size_t length, size_t flags, void* args)
   start_region = PAGE_ALIGN_DOWN(start_region);
   args = (void*) PAGE_ALIGN_DOWN((uintptr_t) args);
   // Checks to see if the region requested already exists and if it does then just lengthens it else returns an error
-  vm_object* current_vm_object = &current_vmm.head;
+  vm_object* current_vm_object = &current_vmm->head;
   uintptr_t found;
   if((void*) start_region == NULL){
     // Going through the list until we find a space with enough space to put a region with the requested size
     // We are just using first fit here
-    current_vm_object = &current_vmm.head;
+    current_vm_object = &current_vmm->head;
     uintptr_t base;
     while(current_vm_object->next != NULL){
       base = current_vm_object->base + current_vm_object->length;
@@ -304,12 +311,32 @@ void* vmm_alloc(uintptr_t start_region, size_t length, size_t flags, void* args)
   return (void*) found;
 }
 
-void* get_new_kernel_stack_addr(){
-  static uintptr_t kernel_stack_ptr = KERNEL_STACK_START;
-  kernel_stack_ptr -= (KERNEL_STACK_SIZE + 0x1000);
-  return (void*) kernel_stack_ptr; 
-}
 
+void create_sections(section_t** section_list, size_t length){
+  // Get a new page and map it into the new virutal memory space
+  code_section_t* code_section;
+  for(section_t* section = section_list[0]; section != (*section_list) + length; section++){
+    switch(section->type){
+      case CODE_SECTION:
+        code_section = (code_section_t*) section;
+        if(! vmm_alloc((uintptr_t) code_section->start, code_section->length, code_section->flags, NULL)){
+          PANIC("vmm", "allocating code section failed"); 
+        }
+        break;
+      case STACK_SECTION:
+        if(! vmm_alloc((uintptr_t) section->start, section->length, section->flags, NULL)){
+          PANIC("vmm", "allocating stack section failed");
+        }
+        memset(section->start, 0, section->length);
+        break;
+      default:
+        ERROR("vmm", "unknown section type");
+        break;
+    }
+    
+  }
+    
+}
 
 uintptr_t get_mmio_ptr(void* phys_region_start, size_t length){
   length = PAGE_ALIGN(length);
@@ -327,13 +354,46 @@ void* alloc_mmio(void* phys_region_start, size_t length, size_t extra_flags){
 }
 
 
-void create_sections(void* stack_start){
-  // Get a new page and map it into the new virutal memory space
-  if(! vmm_alloc((uintptr_t) stack_start, KERNEL_STACK_SIZE, VM_FLAG_READ_WRITE, NULL)){
-     printstr("Error: Allocating stack into new process's memory space failed");
-  }
+void* alloc_kernel_stack(){
+  static uintptr_t kernel_stack_ptr = KERNEL_STACK_START;
+  kernel_stack_ptr -= (KERNEL_STACK_SIZE + 0x1000);
+  
+  section_t stack_section = {
+    .length = KERNEL_STACK_SIZE,
+    .start = (void*) kernel_stack_ptr,
+    .flags = VM_FLAG_READ_WRITE,
+    .type = STACK_SECTION
+  };
+  
+  section_t* sections[] = {
+    &stack_section 
+  };
+
+  create_sections(sections, 1);
+
+  return (void*) kernel_stack_ptr; 
 }
 
+
+void* alloc_user_stack(void* user_stack, vmm_t* vmm){
+  switch_vm_space(vmm);
+
+  section_t stack_section = {
+    .length = KERNEL_STACK_SIZE,
+    .start = (void*) user_stack,
+    .flags = VM_FLAG_READ_WRITE,
+    .type = STACK_SECTION
+  };
+  
+  section_t* sections[] = {
+    &stack_section 
+  };
+
+  create_sections(sections, 1);
+
+  switch_vm_space(&current_process->vmm);
+  return (void*) user_stack;
+}
 
 static void* create_new_pml4t(){
   // The new pml4t will just be at the end of the current page map space
@@ -350,7 +410,7 @@ vmm_t create_vmm(vmm_t new_vmm){
   return (vmm_t) {
     .head = {
       0x00000000,
-      0x26000,
+      0x00000,
       VM_FLAG_READ_WRITE,
       &kernel_text_obj
     },
@@ -375,7 +435,6 @@ vmm_t vmm_init(){
   vmm_hashmap_put(vmm_hashmap, 1,  (void*) initial_pt2,  (void*) initial_pt2_phys);
   vmm_hashmap_put(vmm_hashmap, 1,  (void*) initial_pt3,  (void*) initial_pt3_phys);
 
-  //TODO: Check binary for correctness
   vmm_t new_vmm = {
     {
       0x00000000,
@@ -388,7 +447,8 @@ vmm_t vmm_init(){
     (void*) get_current_pml4t_phys_addr() 
   };
 
-  current_vmm = new_vmm;
+  current_vmm = kmalloc(sizeof(vmm_t));
+  *current_vmm = new_vmm;
 
   return new_vmm;
 }

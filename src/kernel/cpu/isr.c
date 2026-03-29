@@ -6,6 +6,7 @@
 #include "keyboard.h"
 #include "isr.h"
 #include "scheduler.h"
+#include <syscall.h>
 
 // TODO: Calculate this value from isr_stubs.s
 #define NUM_STUBS 256
@@ -68,6 +69,7 @@ void setup_idt(){
   for(size_t vec = 0; vec < NUM_STUBS; vec++){
     set_idt_entry(vec, (uint64_t)(start_isr_stubs + (vec * 16)), 0);
   }
+  set_idt_entry(0xfe, (uint64_t)(start_isr_stubs + (0xfe * 16)), 3);
 }
 
 void load_idt(){
@@ -108,6 +110,10 @@ cpu_context_t* interrupt_handler(cpu_context_t* status){
   }
   else if(status->vec == 0x68){
     new_context = schedule(status);
+  }
+  else if(status->vec == 0xe6){
+    syscall_handler(status);
+    new_context = status;
   }
   else{
     printstr("\nUnknown Interrupt");

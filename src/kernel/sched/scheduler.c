@@ -6,35 +6,11 @@
 #include "mem.h"
 #include "vmm_hashmap.h"
 #include <libtitan.h>
-
-#define NAME_MAX 10
-typedef enum {
-  READY,
-  RUNNING,
-  DEAD
-} status_t;
+#include <gdt64.h>
+#include <syscall.h>
 
 void idle_main();
 
-typedef struct process_t process_t;
-
-typedef struct thread_t{
-  size_t tid;
-  process_t* parent;
-  cpu_context_t context;
-  void* stack;
-  status_t status;
-  char name[NAME_MAX];
-  struct thread_t* next;
-} thread_t;
-
-struct process_t{
-  size_t pid;
-  thread_t* threads; 
-  vmm_t vmm;
-  char name[NAME_MAX];
-  struct process_t* next;
-};
 
 
 process_t* idle_proc = NULL;
@@ -46,12 +22,7 @@ extern uintptr_t* current_pml4t_ptr;
 extern vmm_hashmap_t vmm_hashmap;
 
 
-static void tss_init(){
-  void* nmi_stack = get_new_kernel_stack_addr();
-}
-
-
-static void thread_wrapper(void (*thread_start)(void*), void* arg ){
+static void kernel_thread_wrapper(void (*thread_start)(void*), void* arg){
   thread_start(arg);
   current_thread->status = DEAD;
   while(1){
@@ -59,10 +30,18 @@ static void thread_wrapper(void (*thread_start)(void*), void* arg ){
   }
 }
 
+static void user_thread_wrapper(void (*thread_start)(void*), void* arg){
+  thread_start(arg);
 
-thread_t* create_thread(process_t* p, char name[], void* func, void* func_arg){
+  // Exit
+  execute_syscall(60, 0);  
+  idle_main(); 
+}
+
+thread_t* create_thread(process_t* p, char name[], void* func, void* func_arg, bool is_user){
   static size_t next_tid;
   thread_t* t = kmalloc(sizeof(thread_t));
+  memset(t, 0, sizeof(thread_t)); 
 
   if(p->threads){
     thread_t* scan = p->threads;
@@ -79,10 +58,12 @@ thread_t* create_thread(process_t* p, char name[], void* func, void* func_arg){
   t->status = READY;
   t->next = NULL;
   
-  void* kernel_stack = get_new_kernel_stack_addr();
-  create_sections((void*) kernel_stack);
-  t->stack = kernel_stack;
+  //Support multiple user thread stacks per process
+  void* stack = is_user ? alloc_user_stack((void*) USER_STACK_START, &p->vmm)  : alloc_kernel_stack();
+
+  t->stack = stack;
   t->parent = p;
+  
   // Creating the thread context
   cpu_context_t new_context = {
     .rax = 0,
@@ -102,31 +83,31 @@ thread_t* create_thread(process_t* p, char name[], void* func, void* func_arg){
     .r15 = 0,
     .vec = 0,
     .error_code = 0,
-    .rip_i = (uint64_t) thread_wrapper,
-    .cs_i = 0x8,
+    .rip_i = (uint64_t) kernel_thread_wrapper,
+    .cs_i = is_user ? USER_CODE_OFFSET : CODE_OFFSET,
     .flags_i = 0x00000202,
-    .rsp_i = (uint64_t) kernel_stack + KERNEL_STACK_SIZE - 0x8,
-    .ss_i = 0x10
+    .rsp_i = (uint64_t) stack + KERNEL_STACK_SIZE - 0x8,
+    .ss_i = is_user ? USER_DATA_OFFSET : DATA_OFFSET
   };
-   
   t->context = new_context;
   
   return t;
 }
 
-process_t* create_proc(void* func_point, vmm_t vmm_instance, bool add_to_queue){
+process_t* create_proc(void* func_point, vmm_t vmm_instance, bool add_to_queue, bool is_user){
   static size_t next_pid = 0;
   
   // We are allocating all of the processes on the heap
   process_t* new_proc = kmalloc(sizeof(process_t));
-  
+  memset(new_proc, 0, sizeof(process_t)); 
   // Creating process status
   new_proc->pid = next_pid++; 
   
-  // Creating inital thread
-  create_thread(new_proc, "thread", func_point, NULL);
-
   new_proc->vmm = vmm_instance;
+
+  // Creating inital thread
+  create_thread(new_proc, "thread", func_point, NULL, is_user);
+
 
   // Adding process to queue
   if(add_to_queue){
@@ -158,16 +139,11 @@ void print1(){
 }
 
 void print2(){
-  for(int i = 0; i < 10; i++){
-    printstr("Printing 2\n");
-  }
+  execute_syscall(1, 0x31); 
 }
 
 
-static void switch_vm_space(uintptr_t new_pml4t_paddr){
-  asm volatile("mov %0, %%cr3" :: "r" (new_pml4t_paddr) : "memory");
-  current_pml4t_ptr = (uintptr_t*) get_ptbl_vaddr(vmm_hashmap,(void*) new_pml4t_paddr); 
-}
+
 
 
 static void switch_process(){
@@ -184,7 +160,7 @@ static void switch_process(){
   }
   
 
-  switch_vm_space((uintptr_t) current_process->vmm.pml4t);
+  switch_vm_space(&current_process->vmm);
 }
 
 void reap_thread(thread_t* t);
@@ -221,7 +197,7 @@ void reap_process(process_t* p){
     vmm_free((void*)vms_to_free->base);
   }
   
-  switch_vm_space((uintptr_t) idle_proc->vmm.pml4t);
+  switch_vm_space(&idle_proc->vmm);
   vmm_hashmap_remove(vmm_hashmap, p->vmm.pml4t);
   kfree(p);
 }
@@ -286,9 +262,8 @@ cpu_context_t* schedule(cpu_context_t* context){
 
 
 void sched_init(vmm_t initial_vmm){
-  idle_proc = create_proc(idle_main, create_vmm(initial_vmm), false); 
+  idle_proc = create_proc(idle_main, create_vmm(initial_vmm), false, false); 
   current_process = idle_proc;
   current_thread = current_process->threads;
-  create_proc(print1, create_vmm(initial_vmm), true);
-  create_proc(print2, create_vmm(initial_vmm), true);
+  create_proc(print2, create_vmm(initial_vmm), true, true);
 }

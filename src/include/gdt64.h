@@ -5,6 +5,11 @@
 #include "vmm.h"
 #include <stdint.h>
 
+#define CODE_OFFSET 0x8
+#define DATA_OFFSET 0x10
+#define USER_CODE_OFFSET 0x1b
+#define USER_DATA_OFFSET 0x23
+#define TSS_OFFSET 0x28
 typedef struct __attribute__((packed)) gdt64_segment_t{
   uint16_t limit;          // Max addressable unit
   uint16_t base0;          // First 2 bytes of the base address  
@@ -29,6 +34,8 @@ typedef struct __attribute__((packed)) gdt64_t{
   gdt_segment_t null_segment;
   gdt_segment_t code_segment;
   gdt_segment_t data_segment;
+  gdt_segment_t user_code_segment;
+  gdt_segment_t user_data_segment;
   gdt64_segment_t tss_segment;
 } gdt64_t;
 

@@ -20,7 +20,9 @@ tss_t tss = {
 };
 
 gdt64_t gdt64 = {
+  // Null Entry
   {},
+  // Code Entry
   {
     .limit = 0xffff,
     .base0 = 0x0000,
@@ -29,6 +31,8 @@ gdt64_t gdt64 = {
     .flags_and_limit = 0b10101111,
     .base2= 0
   },
+
+  // Data Entry
   {
     .limit = 0xffff,
     .base0 = 0x0000,
@@ -37,6 +41,26 @@ gdt64_t gdt64 = {
     .flags_and_limit = 0b10100000,
     .base2= 0
   },
+  // User Code Entry
+  {
+    .limit = 0xffff,
+    .base0 = 0x0000,
+    .base1 = 0x0,
+    .access_byte =  0b11111010,
+    .flags_and_limit = 0b10101111,
+    .base2= 0
+  },
+
+  // User Data Entry
+  {
+    .limit = 0xffff,
+    .base0 = 0x0000,
+    .base1 = 0x0,
+    .access_byte =  0b11110010,
+    .flags_and_limit = 0b10100000,
+    .base2= 0
+  },
+  // TSS Entry
   {
     .limit = (sizeof(tss_t) - 1),
     
@@ -74,12 +98,12 @@ void remap_gdt(){
   gdt64.tss_segment.base1 = (uint8_t) ((uint64_t)&tss >> 16);
   gdt64.tss_segment.base2 = (uint8_t) ((uint64_t)&tss >> 24);
   gdt64.tss_segment.base3 = (uint32_t) ((uint64_t)&tss >> 32);
-  void* interrupt_stack = get_new_kernel_stack_addr();
-  create_sections(interrupt_stack);
-  tss.ist1 = (uint64_t) interrupt_stack + KERNEL_STACK_SIZE - 0x8;
+  
+  tss.ist1 = ((uint64_t) alloc_kernel_stack()) + KERNEL_STACK_SIZE - 0x8;
+  tss.rsp1 = ((uint64_t) alloc_kernel_stack()) + KERNEL_STACK_SIZE - 0x8;
    
   void* gdt_desc = (void*) &gdt64_descriptor; 
-  uint16_t tss_offset = 0x18;
+  uint16_t tss_offset = 0x28;
   asm("lgdt (%0)" : "=r"(gdt_desc)); 
   asm("ltr %0 " : : "a"(tss_offset));
 }

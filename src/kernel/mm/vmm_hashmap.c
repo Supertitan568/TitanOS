@@ -43,8 +43,7 @@ static bool pg_tbl_insert(page_table_t* table){
       current_node_ptr = current_node_ptr->next;
       if(current_node_ptr->pt_paddr == table->pt_paddr){
         current_node_ptr->pt_vaddr = table->pt_vaddr;
-        kfree(table);
-        return true;
+        return false;
       }
     }
     current_node_ptr->next = table;
@@ -68,7 +67,7 @@ void* alloc_pg_table(){
   if(!table){
     // We allocate a new page_tbl node
     table = kmalloc(sizeof(page_table_t));
-
+    memset(table, 0, sizeof(page_table_t));
     if(!(table->pt_paddr = pmm_alloc_page())){
       return false; 
     }
