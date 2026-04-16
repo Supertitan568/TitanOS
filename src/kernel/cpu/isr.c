@@ -112,8 +112,7 @@ cpu_context_t* interrupt_handler(cpu_context_t* status){
     new_context = schedule(status);
   }
   else if(status->vec == 0xe6){
-    syscall_handler(status);
-    new_context = status;
+    new_context = syscall_handler(status);
   }
   else{
     printstr("\nUnknown Interrupt");

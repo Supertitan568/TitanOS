@@ -34,7 +34,7 @@ static void user_thread_wrapper(void (*thread_start)(void*), void* arg){
   thread_start(arg);
 
   // Exit
-  execute_syscall(60, 0);  
+  execute_syscall(60, 0, 0, 0);  
   idle_main(); 
 }
 
@@ -139,7 +139,18 @@ void print1(){
 }
 
 void print2(){
-  execute_syscall(1, 0x31); 
+  const char filename[] = "/file2.txt";
+  char buf[20];
+  
+  // We first open the file
+  int file_handle = execute_syscall(2, (uint64_t) filename, 0, 0);
+
+  // We then read 10 chars from the file 
+  execute_syscall(0, file_handle, (uint64_t) buf, 10);
+
+  buf[10] = '\0';
+
+  execute_syscall(1,(uint64_t) buf, 0, 0);
 }
 
 

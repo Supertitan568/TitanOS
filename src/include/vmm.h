@@ -62,7 +62,7 @@ typedef struct{
 void* alloc_kernel_stack();
 void* alloc_user_stack(void* user_stack, vmm_t* vmm);
 void create_sections(section_t** section_list, size_t length);
-uintptr_t get_mmio_ptr(void* phys_region_start, size_t length);
+uintptr_t get_mmio_ptr(size_t length);
 void* alloc_mmio(void* phys_region_start, size_t length, size_t extra_flags);
 void* vmm_alloc(uintptr_t start_region, size_t length, size_t flags, void* args);
 void vmm_set_region_length(void* region, size_t length);

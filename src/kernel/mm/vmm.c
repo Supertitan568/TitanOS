@@ -11,7 +11,6 @@
 uintptr_t* current_pml4t_ptr = (uintptr_t*) INITIAL_PML4T_ADDR;
 
 extern vmm_hashmap_t vmm_hashmap;
-extern process_t* current_process;
 
 extern char initial_pdpt[];  
 extern char initial_pd[];  
@@ -296,6 +295,7 @@ void* vmm_alloc(uintptr_t start_region, size_t length, size_t flags, void* args)
   for(int i = 0; i < (length + 0xfff) / 0x1000; i++){
     if(args){
       pt_paddr = args;
+      args += 0x1000;
       pmm_alloc_specific_page(pt_paddr);
     }
     else{
@@ -338,7 +338,8 @@ void create_sections(section_t** section_list, size_t length){
     
 }
 
-uintptr_t get_mmio_ptr(void* phys_region_start, size_t length){
+
+uintptr_t get_mmio_ptr(size_t length){
   length = PAGE_ALIGN(length);
   static uintptr_t mmio_region = VGA_TEXT_BUFFER_BASE + PAGE_SIZE;
 
@@ -346,9 +347,10 @@ uintptr_t get_mmio_ptr(void* phys_region_start, size_t length){
   return mmio_region - length;
 }
 
+
 void* alloc_mmio(void* phys_region_start, size_t length, size_t extra_flags){
   // VGA buffer is one page long and is the only thing allocated before this runs
-  uintptr_t mmio_region = get_mmio_ptr(phys_region_start, length);
+  uintptr_t mmio_region = get_mmio_ptr(length);
   vmm_alloc(mmio_region, length, VM_FLAG_MMIO | extra_flags, phys_region_start);
   return (void*) mmio_region;
 }

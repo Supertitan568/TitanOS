@@ -9,6 +9,8 @@
 #include <stdint.h>
 #include <mb2_mmap.h>
 #include <acpi.h>
+#include <tar.h>
+#include <vfs.h>
 
 #ifdef TEST
  #include "unit_tests.h"
@@ -60,6 +62,9 @@ int kernel_start(struct multiboot_info* mb_info){
   // Setting up the apic for the keyboard and other things
   apic_init();
   
+
+  tar_init(mb_info);
+  vfs_init();
   // check_scanset(); 
   sched_init(inital_vmm);
   

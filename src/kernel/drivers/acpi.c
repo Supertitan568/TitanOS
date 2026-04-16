@@ -140,7 +140,7 @@ bool acpi_init(struct multiboot_info* mb2_info){
   if(rsdp == NULL || !validate_checksum((uint8_t*) rsdp, sizeof(rsdp_t))){
     PANIC("acpi", "rsdp not valid");
   }
-  rsdt = (rsdt_t*) get_mmio_ptr((void*) rsdp->rsdt_addr, 2 * PAGE_SIZE);
+  rsdt = (rsdt_t*) get_mmio_ptr(2 * PAGE_SIZE);
   rsdt = (rsdt_t*) vmm_alloc((uintptr_t)rsdt, 2 * PAGE_SIZE, VM_FLAG_READ_WRITE, (void*) (rsdp->rsdt_addr));
   rsdt = (rsdt_t*) (((uintptr_t) rsdt) + ((uintptr_t)rsdp->rsdt_addr) - (((uintptr_t)rsdp->rsdt_addr) & 0xfffffffffffff000));
   parse_rsdt();
