@@ -11,6 +11,7 @@
 #include <acpi.h>
 #include <tar.h>
 #include <vfs.h>
+#include <exec_elf.h>
 
 #ifdef TEST
  #include "unit_tests.h"
@@ -68,6 +69,7 @@ int kernel_start(struct multiboot_info* mb_info){
   // check_scanset(); 
   sched_init(inital_vmm);
   
+  exec_elf("/hello_world.elf");
   #if defined(TEST) 
    run_unit_tests();
   #else
@@ -77,5 +79,3 @@ int kernel_start(struct multiboot_info* mb_info){
   hang(); 
   return 0;
 }
-
-

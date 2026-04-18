@@ -31,6 +31,7 @@ typedef struct {
 int vfs_open(const char* filename, size_t flags);
 bool vfs_close(int file_handle);
 
+size_t vfs_seek(int file_handle, size_t pos);
 size_t vfs_read(int file_handle, void* buf, size_t nbytes);
 bool vfs_init();
 

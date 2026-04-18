@@ -71,5 +71,5 @@ bool mmap(uint64_t* root_table, void* paddr, void* vaddr, size_t flags);
 void vmm_free(void* start_region);
 bool vmm_lengthen(uintptr_t start_region, int inc);
 void switch_vm_space(vmm_t* vmm);
-vmm_t create_vmm(vmm_t current_vmm);
+vmm_t create_vmm();
 #endif // !VMM_H

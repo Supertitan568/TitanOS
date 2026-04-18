@@ -1,3 +1,5 @@
+.ONESHELL:
+
 AS=as
 CC=clang
 
@@ -63,6 +65,11 @@ grub-usb: grub-iso
 	./scripts/create_usb.sh
 
 grub-iso: kernel
+	$(MAKE) -C ./src/shell/
+	mv src/shell/shell.elf iso/
+	cd iso/
+	tar cvf boot/initramfs.tar shell.elf file1.txt file2.txt
+	cd ..
 	mv bin/kernel.bin iso/boot/
 	grub-mkrescue -o $(ISO) iso/
 

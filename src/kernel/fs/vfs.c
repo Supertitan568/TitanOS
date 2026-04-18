@@ -90,6 +90,7 @@ int vfs_umount(char* device, char* target){
 
 // Returns a handle
 int vfs_open(const char* filename, size_t flags){
+  // TODO: Properly parse the filepath
   mountpoint_t* mountpoint = get_mountpoint(filename);
 
   // Setting up the file according to the filesystem specified in the mountpoint
@@ -138,6 +139,10 @@ size_t vfs_read(int file_handle, void* buf, size_t nbytes){
   return -1;
 }
 
+size_t vfs_seek(int file_handle, size_t pos){
+  vfs_opened_files[file_handle].buf_read_pos = pos;
+  return pos;
+}
 
 bool vfs_init(){
   mountpoint_t* init_mountpoint = create_mountpoint("initramfs", "/", "tar");

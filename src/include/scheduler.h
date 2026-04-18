@@ -7,6 +7,8 @@
 cpu_context_t* schedule(cpu_context_t* context);
 void sched_init(vmm_t initial_vmm);
 
+process_t* create_proc(void* func, void* func_arg, vmm_t vmm_instance, bool add_to_queue, bool is_user);
+
 typedef struct process_t process_t;
 
 

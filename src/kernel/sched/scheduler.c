@@ -94,7 +94,7 @@ thread_t* create_thread(process_t* p, char name[], void* func, void* func_arg, b
   return t;
 }
 
-process_t* create_proc(void* func_point, vmm_t vmm_instance, bool add_to_queue, bool is_user){
+process_t* create_proc(void* func, void* func_arg, vmm_t vmm_instance, bool add_to_queue, bool is_user){
   static size_t next_pid = 0;
   
   // We are allocating all of the processes on the heap
@@ -106,7 +106,7 @@ process_t* create_proc(void* func_point, vmm_t vmm_instance, bool add_to_queue, 
   new_proc->vmm = vmm_instance;
 
   // Creating inital thread
-  create_thread(new_proc, "thread", func_point, NULL, is_user);
+  create_thread(new_proc, "thread", func, func_arg, is_user);
 
 
   // Adding process to queue
@@ -273,8 +273,7 @@ cpu_context_t* schedule(cpu_context_t* context){
 
 
 void sched_init(vmm_t initial_vmm){
-  idle_proc = create_proc(idle_main, create_vmm(initial_vmm), false, false); 
+  idle_proc = create_proc(idle_main, NULL, create_vmm(initial_vmm), false, false); 
   current_process = idle_proc;
   current_thread = current_process->threads;
-  create_proc(print2, create_vmm(initial_vmm), true, true);
 }

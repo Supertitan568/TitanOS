@@ -408,7 +408,7 @@ static void* create_new_pml4t(){
 }
 
 
-vmm_t create_vmm(vmm_t new_vmm){
+vmm_t create_vmm(){
   return (vmm_t) {
     .head = {
       0x00000000,
@@ -416,10 +416,6 @@ vmm_t create_vmm(vmm_t new_vmm){
       VM_FLAG_READ_WRITE,
       &kernel_text_obj
     },
-    .current_vmm_epoch = new_vmm.current_vmm_epoch,
-
-    .previous_vmm_epoch = new_vmm.previous_vmm_epoch, 
-
     .pml4t = create_new_pml4t()
   };  
 }
